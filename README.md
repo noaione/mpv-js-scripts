@@ -8,7 +8,7 @@ To download, open the dist file and just put the `.js` file into your `scripts` 
 
 Create a mosaic of an images like what MPC-HC does.
 
-![Sample](https://p.ihateani.me/gwfvrvmc.png)
+![Sample](https://p.ihateani.me/qklxfhvu.jpg)
 
 To run, just press `ctrl+alt+s`, it will create a `mosaic.png` file in the same folder as your video.
 
