@@ -258,6 +258,11 @@ function screenshotCycles(startTime: number, timeStep: number, screenshotDir: st
 
         const imagePath = mp.utils.join_path(screenshotDir, `screenshot-${i}.png`);
         mp.command_native(["screenshot-to-file", imagePath, mosaicOptions.mode]) as string;
+        const errorMsg = mp.last_error();
+        if (errorMsg.length > 0) {
+            mp.osd_message("Error taking screenshot: " + errorMsg);
+            return undefined;
+        }
         screenshots.push(imagePath);
     }
     return screenshots;
@@ -315,10 +320,12 @@ function main() {
     const screenshots = screenshotCycles(startTime, timeStep, screenshotDir);
     mp.set_property_number("time-pos", originalTimePos);
     mp.set_property("pause", "no");
-    mp.osd_message("Creating mosaic...", 2);
-    createMosaic(screenshots, videoWidth, videoHeight, mp.get_property("filename") as string, videoDuration, () => {
-        mp.osd_message("Mosaic created!", 2);
-    });
+    if (screenshots !== undefined) {
+        mp.osd_message("Creating mosaic...", 2);
+        createMosaic(screenshots, videoWidth, videoHeight, mp.get_property("filename") as string, videoDuration, () => {
+            mp.osd_message("Mosaic created!", 2);
+        });
+    }
 }
 
 mp.add_key_binding("Ctrl+Alt+s", "screenshot-mosaic", main);
