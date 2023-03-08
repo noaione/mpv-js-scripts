@@ -12,6 +12,11 @@ const mosaicOptions = {
      * @type {"video" | "subtitles" | "window"}
      */
     mode: "video",
+    // Append the "magick" command to the command line.
+    // Sometimes on windows, you cannot really use any magick command without prefixing
+    // "magick", if the command failed, you can run this.
+    // Set to "yes" to enable
+    append_magick: "no",
 }
 
 interface SubprocessCommand {
@@ -102,10 +107,20 @@ class Pathing {
 
     createDirectory(path: string) {
         if (this.isUnix()) {
+            mp.msg.info("Creating directory (Unix): " + path);
             mp.command_native({name: "subprocess", playback_only: false, args: ["mkdir", "-p", path]});
         } else {
-            mp.msg.info("Creating directory: " + path);
-            mp.command_native({name: "subprocess", playback_only: false, args: ["mkdir", path]});
+            mp.msg.info("Creating directory (Windows): " + path);
+            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", `mkdir ${path}`]});
+        }
+    }
+
+    deleteFile(path: string) {
+        mp.msg.info("Deleting file: " + path);
+        if (this.isUnix()) {
+            mp.command_native({name: "subprocess", playback_only: false, args: ["rm", path]});
+        } else {
+            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", `del /F /Q ${path}`]});
         }
     }
 
@@ -164,26 +179,48 @@ function formatDurationToHHMMSS(seconds?: number) {
     return hoursString + ":" + minutesString + ":" + secondsString;
 }
 
+function createOutputName(fileName: string) {
+    let finalName = fileName.replace(" ", "_");
+    const ColRow = `${mosaicOptions.columns}x${mosaicOptions.rows}`;
+    const mosaicName = `.mosaic${ColRow}`;
+    // Max count is 256 characters, with safety margin to 224
+    const testCount = finalName.length + mosaicName.length;
+    if (testCount > 224) {
+        // Butcher only the finalName that doesn't include the mosaicName yet
+        const cutCount = testCount - 224;
+        finalName = finalName.slice(0, -cutCount);
+    }
+    return finalName + mosaicName;
+}
+
 function createMosaic(screenshots: string[], videoWidth: number, videoHeight: number, fileName: string, duration: string, callback: () => void) {
     const paths = new Pathing();
     const cwd = paths.getCwd();
-    const imageMagick = ["magick", "montage"];
+    const imageMagick = [];
+    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        imageMagick.push("magick");
+    }
     const imageMagickArgs = [
+        "montage",
         "-geometry",
         `${videoWidth}x${videoHeight}+${mosaicOptions.padding}+${mosaicOptions.padding}`,
     ];
     for (let i = 0; i < screenshots.length; i++) {
         imageMagickArgs.push(screenshots[i]);
     }
-    const imgOutput = paths.fixPath(mp.utils.join_path(cwd, `mosaic.${mosaicOptions.format}`));
+    const imgOutput = paths.fixPath(mp.utils.join_path(cwd, `${createOutputName(fileName)}.${mosaicOptions.format}`));
     imageMagickArgs.push(imgOutput);
     mp.command_native_async({name: "subprocess", playback_only: false, args: imageMagick.concat(imageMagickArgs)}, (success, res, err) => {
         if (success) {
             mp.command_native_async({name: "subprocess", playback_only: false, args: ["magick", "convert", imgOutput, "-resize", `x${videoHeight}`, imgOutput]}, (s2, r2, e2) => {
                 if (s2) {
                     // annotate text
+                    const annotateCmdsBase = [];
+                    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+                        annotateCmdsBase.push("magick");
+                    }
                     const annotateCmds = [
-                        "magick",
+                        ...annotateCmdsBase,
                         "convert",
                         "-background",
                         "white",
@@ -256,7 +293,7 @@ function screenshotCycles(startTime: number, timeStep: number, screenshotDir: st
         // wait until seeking done
         waitSeeking();
 
-        const imagePath = mp.utils.join_path(screenshotDir, `screenshot-${i}.png`);
+        const imagePath = mp.utils.join_path(screenshotDir, `temp_screenshot-${i}.png`);
         mp.command_native(["screenshot-to-file", imagePath, mosaicOptions.mode]) as string;
         const errorMsg = mp.last_error();
         if (errorMsg.length > 0) {
@@ -268,9 +305,51 @@ function screenshotCycles(startTime: number, timeStep: number, screenshotDir: st
     return screenshots;
 }
 
+function checkMagick() {
+    const cmds = [];
+    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        cmds.push("magick")
+    }
+    cmds.push("montage");
+    cmds.push("--version");
+    const res = mp.command_native({name: "subprocess", playback_only: false, args: cmds}) as any;
+    return res.status === 0;
+}
+
+function verifyVariables() {
+    if (mosaicOptions.rows < 1) {
+        mp.osd_message("Mosaic rows must be greater than 0");
+        return false;
+    }
+    if (mosaicOptions.columns < 1) {
+        mp.osd_message("Mosaic columns must be greater than 0");
+        return false;
+    }
+    if (mosaicOptions.padding < 0) {
+        mp.osd_message("Mosaic padding must be greater than or equal to 0");
+        return false;
+    }
+    const mosaicMode = mosaicOptions.mode.toLowerCase();
+    if (mosaicMode !== "video" && mosaicMode !== "subtitles" && mosaicMode !== "window") {
+        mp.osd_message("Mosaic mode must be either 'video' or 'subtitles' or 'window'");
+        return false;
+    }
+    return true;
+}
+
 function main() {
     // create a mosaic of screenshots
     const paths = new Pathing();
+    if (!verifyVariables()) {
+        return;
+    }
+    const magickExist = checkMagick();
+    if (!magickExist) {
+        const tf = paths.isUnix() ? "false" : "true";
+        mp.msg.info(`ImageMagick cannot be found, please install it.\nOr you can set append_magick to ${tf} in the script options.`);
+        mp.osd_message(`ImageMagick cannot be found, please install it.\nOr you can set append_magick to ${tf} in the script options.`, 5);
+        return;
+    }
     const imageCount = mosaicOptions.rows * mosaicOptions.columns;
     // get video length and divide by number of screenshots
     const videoLength = mp.get_property_number("duration");
@@ -312,6 +391,7 @@ function main() {
     const endTime = videoLength * 0.9;
     const timeStep = (endTime - startTime) / (imageCount - 1);
     mp.osd_message(`Creating ${mosaicOptions.columns}x${mosaicOptions.rows} mosaic of ${imageCount} screenshots...`, 2);
+    mp.msg.info(`Creating ${mosaicOptions.columns}x${mosaicOptions.rows} mosaic of ${imageCount} screenshots...`);
     // pause video
     const homeDir = mp.command_native(["expand-path", "~~home/"])  as string;
     const screenshotDir = paths.fixPath(mp.utils.join_path(homeDir, "screenshot-mosaic"));
@@ -321,9 +401,16 @@ function main() {
     mp.set_property_number("time-pos", originalTimePos);
     mp.set_property("pause", "no");
     if (screenshots !== undefined) {
+        mp.msg.info(`Creating mosaic for ${mosaicOptions.columns}x${mosaicOptions.rows} images...`)
         mp.osd_message("Creating mosaic...", 2);
         createMosaic(screenshots, videoWidth, videoHeight, mp.get_property("filename") as string, videoDuration, () => {
+            mp.msg.info(`Mosaic created for ${mosaicOptions.columns}x${mosaicOptions.rows} images...`)
             mp.osd_message("Mosaic created!", 2);
+            // Cleanup
+            mp.msg.info("Cleaning up...");
+            screenshots.forEach((sspath) => {
+                paths.deleteFile(paths.fixPath(sspath));
+            })
         });
     }
 }

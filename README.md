@@ -6,11 +6,13 @@ To download, open the dist file and just put the `.js` file into your `scripts` 
 
 ### [`screenshot-mosaic`](dist/screenshot-mosaic.js)
 
+**You need ImageMagick installed on your system** (especially the `montage` command need to be available)
+
 Create a mosaic of an images like what MPC-HC does.
 
 ![Sample](https://p.ihateani.me/qklxfhvu.jpg)
 
-To run, just press `ctrl+alt+s`, it will create a `mosaic.png` file in the same folder as your video.
+To run, just press `ctrl+alt+s`, it will create a `$fileName.mosaic$colx$row.png` file in the same folder as your video.
 
 You can modify the keybind:
 ```conf
@@ -32,4 +34,7 @@ format=png
 # --> subtitles: Screenshot the video + subs
 # --> window: Screenshot the whole window, including the UI
 mode=video
+# Append the command "magick" before the actual command
+# Might be useful if you're on Windows.
+append_magick=no
 ```

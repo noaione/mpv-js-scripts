@@ -1,3 +1,12 @@
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+        if (ar || !(i in from)) {
+            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+            ar[i] = from[i];
+        }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+};
 var mosaicOptions = {
     // Number of rows for screenshot
     rows: 3,
@@ -11,7 +20,12 @@ var mosaicOptions = {
     /**
      * @type {"video" | "subtitles" | "window"}
      */
-    mode: "video"
+    mode: "video",
+    // Append the "magick" command to the command line.
+    // Sometimes on windows, you cannot really use any magick command without prefixing
+    // "magick", if the command failed, you can run this.
+    // Set to "yes" to enable
+    append_magick: "no"
 };
 var Pathing = /** @class */ (function () {
     function Pathing() {
@@ -79,11 +93,21 @@ var Pathing = /** @class */ (function () {
     };
     Pathing.prototype.createDirectory = function (path) {
         if (this.isUnix()) {
+            mp.msg.info("Creating directory (Unix): " + path);
             mp.command_native({ name: "subprocess", playback_only: false, args: ["mkdir", "-p", path] });
         }
         else {
-            mp.msg.info("Creating directory: " + path);
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["mkdir", path] });
+            mp.msg.info("Creating directory (Windows): " + path);
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "mkdir ".concat(path)] });
+        }
+    };
+    Pathing.prototype.deleteFile = function (path) {
+        mp.msg.info("Deleting file: " + path);
+        if (this.isUnix()) {
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["rm", path] });
+        }
+        else {
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "del /F /Q ".concat(path)] });
         }
     };
     Pathing.prototype.joinPath = function (basePath, path) {
@@ -138,26 +162,46 @@ function formatDurationToHHMMSS(seconds) {
     var secondsString = padZero(seconds2);
     return hoursString + ":" + minutesString + ":" + secondsString;
 }
+function createOutputName(fileName) {
+    var finalName = fileName.replace(" ", "_");
+    var ColRow = "".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows);
+    var mosaicName = ".mosaic".concat(ColRow);
+    // Max count is 256 characters, with safety margin to 224
+    var testCount = finalName.length + mosaicName.length;
+    if (testCount > 224) {
+        // Butcher only the finalName that doesn't include the mosaicName yet
+        var cutCount = testCount - 224;
+        finalName = finalName.slice(0, -cutCount);
+    }
+    return finalName + mosaicName;
+}
 function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, callback) {
     var paths = new Pathing();
     var cwd = paths.getCwd();
-    var imageMagick = ["magick", "montage"];
+    var imageMagick = [];
+    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        imageMagick.push("magick");
+    }
     var imageMagickArgs = [
+        "montage",
         "-geometry",
         "".concat(videoWidth, "x").concat(videoHeight, "+").concat(mosaicOptions.padding, "+").concat(mosaicOptions.padding),
     ];
     for (var i = 0; i < screenshots.length; i++) {
         imageMagickArgs.push(screenshots[i]);
     }
-    var imgOutput = paths.fixPath(mp.utils.join_path(cwd, "mosaic.".concat(mosaicOptions.format)));
+    var imgOutput = paths.fixPath(mp.utils.join_path(cwd, "".concat(createOutputName(fileName), ".").concat(mosaicOptions.format)));
     imageMagickArgs.push(imgOutput);
     mp.command_native_async({ name: "subprocess", playback_only: false, args: imageMagick.concat(imageMagickArgs) }, function (success, res, err) {
         if (success) {
             mp.command_native_async({ name: "subprocess", playback_only: false, args: ["magick", "convert", imgOutput, "-resize", "x".concat(videoHeight), imgOutput] }, function (s2, r2, e2) {
                 if (s2) {
                     // annotate text
-                    var annotateCmds = [
-                        "magick",
+                    var annotateCmdsBase = [];
+                    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+                        annotateCmdsBase.push("magick");
+                    }
+                    var annotateCmds = __spreadArray(__spreadArray([], annotateCmdsBase, true), [
                         "convert",
                         "-background",
                         "white",
@@ -193,7 +237,7 @@ function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, 
                         imgOutput,
                         "-append",
                         imgOutput,
-                    ];
+                    ], false);
                     mp.command_native_async({ name: "subprocess", playback_only: false, args: annotateCmds }, function (s3, r3, e3) {
                         if (s3) {
                             callback();
@@ -224,7 +268,7 @@ function screenshotCycles(startTime, timeStep, screenshotDir) {
         mp.set_property_number("time-pos", tTarget);
         // wait until seeking done
         waitSeeking();
-        var imagePath = mp.utils.join_path(screenshotDir, "screenshot-".concat(i, ".png"));
+        var imagePath = mp.utils.join_path(screenshotDir, "temp_screenshot-".concat(i, ".png"));
         mp.command_native(["screenshot-to-file", imagePath, mosaicOptions.mode]);
         var errorMsg = mp.last_error();
         if (errorMsg.length > 0) {
@@ -235,9 +279,49 @@ function screenshotCycles(startTime, timeStep, screenshotDir) {
     }
     return screenshots;
 }
+function checkMagick() {
+    var cmds = [];
+    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        cmds.push("magick");
+    }
+    cmds.push("montage");
+    cmds.push("--version");
+    var res = mp.command_native({ name: "subprocess", playback_only: false, args: cmds });
+    return res.status === 0;
+}
+function verifyVariables() {
+    if (mosaicOptions.rows < 1) {
+        mp.osd_message("Mosaic rows must be greater than 0");
+        return false;
+    }
+    if (mosaicOptions.columns < 1) {
+        mp.osd_message("Mosaic columns must be greater than 0");
+        return false;
+    }
+    if (mosaicOptions.padding < 0) {
+        mp.osd_message("Mosaic padding must be greater than or equal to 0");
+        return false;
+    }
+    var mosaicMode = mosaicOptions.mode.toLowerCase();
+    if (mosaicMode !== "video" && mosaicMode !== "subtitles" && mosaicMode !== "window") {
+        mp.osd_message("Mosaic mode must be either 'video' or 'subtitles' or 'window'");
+        return false;
+    }
+    return true;
+}
 function main() {
     // create a mosaic of screenshots
     var paths = new Pathing();
+    if (!verifyVariables()) {
+        return;
+    }
+    var magickExist = checkMagick();
+    if (!magickExist) {
+        var tf = paths.isUnix() ? "false" : "true";
+        mp.msg.info("ImageMagick cannot be found, please install it.\nOr you can set append_magick to ".concat(tf, " in the script options."));
+        mp.osd_message("ImageMagick cannot be found, please install it.\nOr you can set append_magick to ".concat(tf, " in the script options."), 5);
+        return;
+    }
     var imageCount = mosaicOptions.rows * mosaicOptions.columns;
     // get video length and divide by number of screenshots
     var videoLength = mp.get_property_number("duration");
@@ -277,6 +361,7 @@ function main() {
     var endTime = videoLength * 0.9;
     var timeStep = (endTime - startTime) / (imageCount - 1);
     mp.osd_message("Creating ".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows, " mosaic of ").concat(imageCount, " screenshots..."), 2);
+    mp.msg.info("Creating ".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows, " mosaic of ").concat(imageCount, " screenshots..."));
     // pause video
     var homeDir = mp.command_native(["expand-path", "~~home/"]);
     var screenshotDir = paths.fixPath(mp.utils.join_path(homeDir, "screenshot-mosaic"));
@@ -286,9 +371,16 @@ function main() {
     mp.set_property_number("time-pos", originalTimePos);
     mp.set_property("pause", "no");
     if (screenshots !== undefined) {
+        mp.msg.info("Creating mosaic for ".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows, " images..."));
         mp.osd_message("Creating mosaic...", 2);
         createMosaic(screenshots, videoWidth, videoHeight, mp.get_property("filename"), videoDuration, function () {
+            mp.msg.info("Mosaic created for ".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows, " images..."));
             mp.osd_message("Mosaic created!", 2);
+            // Cleanup
+            mp.msg.info("Cleaning up...");
+            screenshots.forEach(function (sspath) {
+                paths.deleteFile(paths.fixPath(sspath));
+            });
         });
     }
 }
