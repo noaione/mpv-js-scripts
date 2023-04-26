@@ -14,9 +14,13 @@ const mosaicOptions = {
     mode: "video",
     // Append the "magick" command to the command line.
     // Sometimes on windows, you cannot really use any magick command without prefixing
-    // "magick", if the command failed, you can run this.
-    // Set to "yes" to enable
+    // "magick", if the command failed, you can set this to `yes` in your config.
     append_magick: "no",
+    // Resize the final montage into the video height.
+    // I recommend keeping this enabled since if you have a 4k video, you don't want to
+    // have a montage that is basically 4k * whatever the number of screenshots you have.
+    // It would be way too big, so this will resize it back to the video height.
+    resize: "yes",
 }
 
 interface SubprocessCommand {
@@ -24,6 +28,9 @@ interface SubprocessCommand {
     stderr: string | undefined;
     status: number;
 }
+
+type CallbackChain = (success: boolean, error: string | undefined) => void;
+type FinalCallbackChain = (success: boolean, error: string | undefined, output: string) => void;
 
 class Pathing {
     _isUnix: boolean | null;
@@ -143,6 +150,31 @@ class Pathing {
 
 mp.options.read_options(mosaicOptions, "screenshot-mosaic");
 
+function getOutputDir() {
+    const paths = new Pathing();
+    const cwd = paths.getCwd();
+    if (cwd) {
+        mp.msg.info("Using current working directory: " + cwd);
+        return paths.fixPath(cwd);
+    }
+
+    const lastErr = mp.last_error();
+    if (lastErr) {
+        mp.msg.error("Could not get current working directory: " + lastErr);
+    }
+
+    // Use the screenshot directory as a fallback.
+    const screenDir = mp.get_property("screenshot-directory");
+    if (screenDir) {
+        mp.msg.info("Using screenshot directory as fallback: " + screenDir);
+        return paths.fixPath(screenDir);
+    }
+
+    const homeDir = mp.command_native(["expand-path", "~~home/"]) as string;
+    mp.msg.error(`Could not get screenshot directory, trying to use mpv home directory: ${homeDir}`);
+    return paths.fixPath(homeDir);
+}
+
 function humanizeBytes(bytes?: number) {
     if (bytes === undefined) return "?? B";
     const thresh = 1024;
@@ -193,9 +225,92 @@ function createOutputName(fileName: string) {
     return finalName + mosaicName;
 }
 
-function createMosaic(screenshots: string[], videoWidth: number, videoHeight: number, fileName: string, duration: string, callback: () => void) {
+function runResize(imgOutput: string, videoHeight: number, callback: CallbackChain) {
+    const resizeCmdsBase = [];
+    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        resizeCmdsBase.push("magick");
+    }
+    const resizeCmds = [
+        ...resizeCmdsBase,
+        "convert",
+        imgOutput,
+        "-resize",
+        `x${videoHeight}`,
+        imgOutput,
+    ]
+    if (mosaicOptions.resize.toLowerCase() !== "yes") {
+        callback(true, undefined);
+        return;
+    }
+    mp.msg.info(`Resizing image to x${videoHeight}: ${imgOutput}`)
+    dump(resizeCmds)
+    mp.command_native_async(
+        {name: "subprocess", playback_only: false, args: resizeCmds},
+        (success, _, error) => {
+            mp.msg.info(`Resize status: ${success} || ${error}`);
+            callback(success, error);
+        }
+    );
+}
+
+function runAnnotation(fileName: string, videoWidth: number, videoHeight: number, duration: string, imgOutput: string, callback: CallbackChain) {
+    // annotate text
+    const annotateCmdsBase = [];
+    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        annotateCmdsBase.push("magick");
+    }
+    const annotateCmds = [
+        ...annotateCmdsBase,
+        "convert",
+        "-background",
+        "white",
+        "-pointsize",
+        "40",
+        "label:mpv Media Player",
+        "-gravity",
+        "northwest",
+        "-pointsize",
+        "16",
+        "-splice",
+        "5x0",
+        "label:File Name: " + fileName + "",
+        "-gravity",
+        "northwest",
+        "-pointsize",
+        "16",
+        "label:File Size: " + humanizeBytes(mp.get_property_number("file-size")) + "",
+        "-gravity",
+        "northwest",
+        "-splice",
+        "5x0",
+        "label:Resolution: " + videoWidth + "x" + videoHeight + "",
+        "-gravity",
+        "northwest",
+        "-pointsize",
+        "16",
+        "label:Duration: " + duration + "",
+        "-gravity",
+        "northwest",
+        "-splice",
+        "5x0",
+        imgOutput,
+        "-append",
+        imgOutput,
+    ];
+    mp.msg.info(`Annotating image: ${imgOutput}`)
+    dump(annotateCmds)
+    mp.command_native_async(
+        {name: "subprocess", playback_only: false, args: annotateCmds},
+        (success, _, error) => {
+            mp.msg.info(`Annotate status: ${success} || ${error}`);
+            callback(success, error)
+        }
+    )
+}
+
+function createMosaic(screenshots: string[], videoWidth: number, videoHeight: number, fileName: string, duration: string, callback: FinalCallbackChain) {
     const paths = new Pathing();
-    const cwd = paths.getCwd();
+    const outputDir = getOutputDir();
     const imageMagick = [];
     if (mosaicOptions.append_magick.toLowerCase() === "yes") {
         imageMagick.push("magick");
@@ -208,77 +323,30 @@ function createMosaic(screenshots: string[], videoWidth: number, videoHeight: nu
     for (let i = 0; i < screenshots.length; i++) {
         imageMagickArgs.push(screenshots[i]);
     }
-    const imgOutput = paths.fixPath(mp.utils.join_path(cwd, `${createOutputName(fileName)}.${mosaicOptions.format}`));
+    const imgOutput = paths.fixPath(mp.utils.join_path(outputDir, `${createOutputName(fileName)}.${mosaicOptions.format}`));
     imageMagickArgs.push(imgOutput);
-    mp.command_native_async({name: "subprocess", playback_only: false, args: imageMagick.concat(imageMagickArgs)}, (success, res, err) => {
-        if (success) {
-            mp.command_native_async({name: "subprocess", playback_only: false, args: ["magick", "convert", imgOutput, "-resize", `x${videoHeight}`, imgOutput]}, (s2, r2, e2) => {
-                if (s2) {
-                    // annotate text
-                    const annotateCmdsBase = [];
-                    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
-                        annotateCmdsBase.push("magick");
+    mp.msg.info(`Creating image montage: ${imgOutput}`)
+    dump(imageMagickArgs)
+    mp.command_native_async(
+        {name: "subprocess", playback_only: false, args: imageMagick.concat(imageMagickArgs)},
+        (success, _, error) => {
+            mp.msg.info(`Montage status: ${success} || ${error}`);
+            if (success) {
+                runResize(imgOutput, videoHeight, (result2, error2) => {
+                    if (!result2) {
+                        callback(false, error2, imgOutput);
+                    } else {
+                        runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, (result3, error3) => {
+                            callback(result3, error3, imgOutput);
+                        });
                     }
-                    const annotateCmds = [
-                        ...annotateCmdsBase,
-                        "convert",
-                        "-background",
-                        "white",
-                        "-pointsize",
-                        "40",
-                        "label:mpv Media Player",
-                        "-gravity",
-                        "northwest",
-                        "-pointsize",
-                        "16",
-                        "-splice",
-                        "5x0",
-                        "label:File Name: " + fileName + "",
-                        "-gravity",
-                        "northwest",
-                        "-pointsize",
-                        "16",
-                        "label:File Size: " + humanizeBytes(mp.get_property_number("file-size")) + "",
-                        "-gravity",
-                        "northwest",
-                        "-splice",
-                        "5x0",
-                        "label:Resolution: " + videoWidth + "x" + videoHeight + "",
-                        "-gravity",
-                        "northwest",
-                        "-pointsize",
-                        "16",
-                        "label:Duration: " + duration + "",
-                        "-gravity",
-                        "northwest",
-                        "-splice",
-                        "5x0",
-                        imgOutput,
-                        "-append",
-                        imgOutput,
-                    ];
-                    mp.command_native_async({name: "subprocess", playback_only: false, args: annotateCmds}, (s3, r3, e3) => {
-                        if (s3) {
-                            callback();
-                        } else {
-                            mp.osd_message("Error annotating image: " + e3);
-                        }
-                    })
-                }
-            });
-
+                });
+            } else {
+                callback(false, error, imgOutput)
+            }
         }
-    });
+    );
     
-}
-
-function waitSeeking() {
-    setTimeout(() => {
-        const seek = mp.get_property_bool("seeking");
-        if (seek) {
-            waitSeeking();
-        }
-    }, 500);
 }
 
 function screenshotCycles(startTime: number, timeStep: number, screenshotDir: string) {
@@ -289,10 +357,8 @@ function screenshotCycles(startTime: number, timeStep: number, screenshotDir: st
 
     for (let i = 1; i <= totalImages; i++) {
         const tTarget = startTime + (timeStep * (i - 1));
-        mp.set_property_number("time-pos", tTarget);
+        mp.command_native(["seek", tTarget, "absolute", "exact"]);
         // wait until seeking done
-        waitSeeking();
-
         const imagePath = mp.utils.join_path(screenshotDir, `temp_screenshot-${i}.png`);
         mp.command_native(["screenshot-to-file", imagePath, mosaicOptions.mode]) as string;
         const errorMsg = mp.last_error();
@@ -335,6 +401,17 @@ function verifyVariables() {
         return false;
     }
     return true;
+}
+
+function sendOSD(message: string, duration: number = 2) {
+    const prefix = mp.get_property("osd-ass-cc/0");
+    const postfix = mp.get_property("osd-ass-cc/1");
+
+    if (prefix && postfix) {
+        mp.osd_message(`${prefix}${message}${postfix}`, duration);
+    } else {
+        mp.osd_message(message, duration);
+    }
 }
 
 function main() {
@@ -403,9 +480,15 @@ function main() {
     if (screenshots !== undefined) {
         mp.msg.info(`Creating mosaic for ${mosaicOptions.columns}x${mosaicOptions.rows} images...`)
         mp.osd_message("Creating mosaic...", 2);
-        createMosaic(screenshots, videoWidth, videoHeight, mp.get_property("filename") as string, videoDuration, () => {
-            mp.msg.info(`Mosaic created for ${mosaicOptions.columns}x${mosaicOptions.rows} images...`)
-            mp.osd_message("Mosaic created!", 2);
+        createMosaic(screenshots, videoWidth, videoHeight, mp.get_property("filename") as string, videoDuration, (success, error, output) => {
+            if (success) {
+                mp.msg.info(`Mosaic created for ${mosaicOptions.columns}x${mosaicOptions.rows} images at ${output}...`);
+                sendOSD(`Mosaic created!\n{\\b1}${output}{\\b0}`, 5);
+            } else {
+                mp.msg.error(`Failed to create mosaic for ${mosaicOptions.columns}x${mosaicOptions.rows} images...`);
+                mp.msg.error(error);
+                mp.osd_message(`Failed to create mosaic for ${mosaicOptions.columns}x${mosaicOptions.rows} images...`, 5);
+            }
             // Cleanup
             mp.msg.info("Cleaning up...");
             screenshots.forEach((sspath) => {

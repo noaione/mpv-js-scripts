@@ -2,7 +2,7 @@
 
 A collection of JS mpv scripts that can be used.
 
-To download, open the dist file and just put the `.js` file into your `scripts` folder.
+To download, open the [dist](dist) folder and just put the `.js` file into your `scripts` folder.
 
 ### [`screenshot-mosaic`](dist/screenshot-mosaic.js)
 
@@ -34,7 +34,14 @@ format=png
 # --> subtitles: Screenshot the video + subs
 # --> window: Screenshot the whole window, including the UI
 mode=video
-# Append the command "magick" before the actual command
-# Might be useful if you're on Windows.
+# Append the "magick" command to the command line.
+# Sometimes on windows, you cannot really use any magick command without prefixing
+# "magick", if the command failed, you can set this to `yes` to prepend the command with `magick`
 append_magick=no
+# Resize the final montage into the video height.
+# ---
+# I recommend keeping this enabled since if you have a 4k video, you don't want to
+# have a montage that is basically 4k * whatever the number of screenshots you have.
+# It would be way too big, so this will resize it back to the video height.
+resize=yes
 ```
