@@ -134,14 +134,14 @@ mp.options.read_options(mosaicOptions, "screenshot-mosaic");
 function testDirectory(path) {
     var paths = new Pathing();
     var target = mp.utils.join_path(path, "_mosaic_screenshot_test.bin");
-    mp.utils.write_file(target, "THIS FILE IS CREATED BY MPV SCREENSHOT MOSAIC SCRIPT");
+    mp.utils.write_file("file://".concat(target), "THIS FILE IS CREATED BY MPV SCREENSHOT MOSAIC SCRIPT");
     var isError = mp.last_error();
     if (isError) {
         mp.msg.error("Could not write to directory: " + path);
         return false;
     }
     // delete
-    paths.deleteFile(target);
+    paths.deleteFile(paths.fixPath(target));
     return true;
 }
 function getOutputDir() {
