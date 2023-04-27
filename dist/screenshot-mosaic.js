@@ -7,6 +7,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     }
     return to.concat(ar || Array.prototype.slice.call(from));
 };
+/**
+ * This script will take a screenshot of a video and create a mosaic of that said video.
+ * It will take a screenshot of determined number of rows and columns, and then create
+ * a montage of those screenshots.
+ * 
+ * This .js file is a compiled version of the .ts file, you can compile it yourself by
+ * running `npm run compile:mosaic`.
+ * 
+ * Created by: N4O#8868 (noaione)
+ * License: MIT
+ */
 var mosaicOptions = {
     // Number of rows for screenshot
     rows: 3,
@@ -31,6 +42,24 @@ var mosaicOptions = {
     // It would be way too big, so this will resize it back to the video height.
     resize: "yes"
 };
+/**
+ * The result of running a subprocess.
+ * @typedef {Object} SubprocessResult
+ * @property {string | undefined} stdout - The stdout of the command.
+ * @property {string | undefined} stderr - The stderr of the command.
+ * @property {number} status - The exit code of the command.
+ * @property {boolean} killed_by_us - Whether the command was killed by us.
+ * @property {string} error_string - The error string of the command.
+ */
+/**
+ * The callback chain for montage -> resize -> annotate
+ * @callback CallbackChain
+ * @param {boolean} success - Whether the command was successful.
+ * @param {string | undefined} error - The error string of the command.
+ */
+/**
+ * @class Pathing
+ */
 var Pathing = /** @class */ (function () {
     function Pathing() {
         this._isUnix = null;
@@ -131,6 +160,11 @@ var Pathing = /** @class */ (function () {
     return Pathing;
 }());
 mp.options.read_options(mosaicOptions, "screenshot-mosaic");
+/**
+ * Test if a directory is valid.
+ * @param {string} path - The path to test.
+ * @returns {boolean} - Whether the path is valid.
+ */
 function testDirectory(path) {
     var paths = new Pathing();
     var target = mp.utils.join_path(path, "_mosaic_screenshot_test.bin");
@@ -144,23 +178,48 @@ function testDirectory(path) {
     paths.deleteFile(paths.fixPath(target));
     return true;
 }
+/**
+ * Get the output directory.
+ * @returns {string} - The output directory.
+ */
 function getOutputDir() {
     var paths = new Pathing();
     // Use screenshot directory
     var screenDir = mp.get_property("screenshot-directory");
-    if (screenDir && testDirectory(screenDir)) {
-        mp.msg.info("Using screenshot directory: " + screenDir);
-        return paths.fixPath(screenDir);
+    if (screenDir) {
+        var expandScreenDir = mp.command_native(["expand-path", screenDir]);
+        var lastError = mp.last_error();
+        if (!lastError && testDirectory(expandScreenDir)) {
+            mp.msg.info("Using screenshot directory: " + expandScreenDir);
+            return paths.fixPath(screenDir);
+        }
     }
     // Use mpv home directory as fallback
     var homeDir = mp.command_native(["expand-path", "~~home/"]);
     mp.msg.error("Could not get screenshot directory, trying to use mpv home directory: ".concat(homeDir));
     return paths.fixPath(homeDir);
 }
-function isSuccess(result) {
+/**
+ * Explicitly check if the execution of magick command was successful.
+ * Since sometimes a command would just return 0 even if it failed.
+ * @param {SubprocessResult} result - The result of the subprocess.
+ * @returns {boolean} - Whether the subprocess was successful.
+ */
+function isMagickSuccess(result) {
     // mpv subprocess actually return success even if magick fails.
-    return result.status === 0;
+    if (result.status !== 0) {
+        return [false, result.stderr || ""];
+    }
+    var stdout = result.stdout || "";
+    var stderr = result.stderr || "";
+    var errorMsg = (stdout || stderr).replace(/\r?\n/g, "\n");
+    return [stdout.indexOf("error/") === -1 && stderr.indexOf("error/") === -1, errorMsg];
 }
+/**
+ * Humanize bytes number to a human readable string.
+ * @param {number | undefined} bytes - The number of bytes.
+ * @returns {string} - The humanized bytes. e.g. "1.2 MiB" or "?? B" if bytes is undefined.
+ */
 function humanizeBytes(bytes) {
     if (bytes === undefined)
         return "?? B";
@@ -176,13 +235,29 @@ function humanizeBytes(bytes) {
     } while (Math.abs(bytes) >= thresh && u < units.length - 1);
     return bytes.toFixed(1) + ' ' + units[u];
 }
+/**
+ * Floor a number.
+ * Since there is no Math.floor in mpv scripting, use ~~ instead.
+ * @param {number} n - The number to floor.
+ * @returns {number} - The floored number.
+ */
 function floor(n) {
     // no Math module
     return ~~n;
 }
+/**
+ * Pad a number with leading zeros.
+ * @param {number} n - The number to pad.
+ * @returns {string}
+ */
 function padZero(n) {
     return n < 10 ? "0" + n : "" + n;
 }
+/**
+ * Format a duration number into HH:MM:SS.
+ * @param {number | undefined} seconds - The seconds to format.
+ * @returns {string} - The formatted duration.
+ */
 function formatDurationToHHMMSS(seconds) {
     // do not use Date
     if (seconds === undefined)
@@ -196,6 +271,11 @@ function formatDurationToHHMMSS(seconds) {
     var secondsString = padZero(seconds2);
     return hoursString + ":" + minutesString + ":" + secondsString;
 }
+/**
+ * Format an output filename with some constraints and extra info.
+ * @param {string} fileName - The original filename
+ * @returns {string} - The new filename
+ */
 function createOutputName(fileName) {
     var finalName = fileName.replace(" ", "_");
     var ColRow = "".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows);
@@ -209,6 +289,13 @@ function createOutputName(fileName) {
     }
     return finalName + mosaicName;
 }
+/**
+ * Run the resize command, will be skipped if resize is disabled.
+ * @param {string} imgOutput - The image output path.
+ * @param {number} videoHeight - The video height.
+ * @param {CallbackChain} callback - The callback chain that will be called.
+ * @returns {void} - Nothing
+ */
 function runResize(imgOutput, videoHeight, callback) {
     var resizeCmdsBase = [];
     if (mosaicOptions.append_magick.toLowerCase() === "yes") {
@@ -227,11 +314,28 @@ function runResize(imgOutput, videoHeight, callback) {
     }
     mp.msg.info("Resizing image to x".concat(videoHeight, ": ").concat(imgOutput));
     dump(resizeCmds);
-    mp.command_native_async({ name: "subprocess", playback_only: false, args: resizeCmds }, function (_, result, error) {
-        mp.msg.info("Resize status: ".concat(isSuccess(result), " || err? ").concat(error));
-        callback(isSuccess(result), error);
+    mp.command_native_async({
+        name: "subprocess",
+        playback_only: false,
+        args: resizeCmds,
+        capture_stderr: true,
+        capture_stdout: true
+    }, function (_, result, __) {
+        var _a = isMagickSuccess(result), success = _a[0], errorMsg = _a[1];
+        mp.msg.info("Resize status: ".concat(success, " || err? ").concat(errorMsg));
+        callback(success, errorMsg);
     });
 }
+/**
+ * Run the annotation command.
+ * @param {string} fileName - The video filename.
+ * @param {number} videoWidth - The video width.
+ * @param {number} videoHeight - The video height.
+ * @param {string} duration - The video duration (pre-formatted).
+ * @param {string} imgOutput - The image output path.
+ * @param {CallbackChain} callback - The callback chain that will be called.
+ * @returns {void} - Nothing
+ */
 function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, callback) {
     // annotate text
     var annotateCmdsBase = [];
@@ -277,14 +381,30 @@ function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, c
     ], false);
     mp.msg.info("Annotating image: ".concat(imgOutput));
     dump(annotateCmds);
-    mp.command_native_async({ name: "subprocess", playback_only: false, args: annotateCmds }, function (_, result, error) {
-        mp.msg.info("Annotate status: ".concat(isSuccess(result), " || err? ").concat(error));
-        callback(isSuccess(result), error);
+    mp.command_native_async({
+        name: "subprocess",
+        playback_only: false,
+        args: annotateCmds,
+        capture_stderr: true,
+        capture_stdout: true
+    }, function (_, result, __) {
+        var _a = isMagickSuccess(result), success = _a[0], errorMsg = _a[1];
+        mp.msg.info("Annotate status: ".concat(success, " || err? ").concat(errorMsg));
+        callback(success, errorMsg);
     });
 }
-function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, callback) {
-    var paths = new Pathing();
-    var outputDir = getOutputDir();
+/**
+ * Run the montagge, resize, and annotate command.
+ * @param {string[]} screenshots - The list of screenshots to montage.
+ * @param {number} videoWidth - The video width.
+ * @param {number} videoHeight - The video height.
+ * @param {string} fileName - The video filename.
+ * @param {string} duration - The video duration (pre-formatted).
+ * @param {string} outputFile - The image output path.
+ * @param {CallbackChain} callback - The callback chain that will be called.
+ * @returns {void} - Nothing
+ */
+function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, outputFile, callback) {
     var imageMagick = [];
     if (mosaicOptions.append_magick.toLowerCase() === "yes") {
         imageMagick.push("magick");
@@ -297,30 +417,42 @@ function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, 
     for (var i = 0; i < screenshots.length; i++) {
         imageMagickArgs.push(screenshots[i]);
     }
-    var imgOutput = paths.fixPath(mp.utils.join_path(outputDir, "".concat(createOutputName(fileName), ".").concat(mosaicOptions.format)));
-    imageMagickArgs.push(imgOutput);
-    mp.msg.info("Creating image montage: ".concat(imgOutput));
+    imageMagickArgs.push(outputFile);
+    mp.msg.info("Creating image montage: ".concat(outputFile));
     dump(imageMagickArgs);
-    mp.command_native_async({ name: "subprocess", playback_only: false, args: imageMagick.concat(imageMagickArgs) }, function (_, result, error) {
-        var success = isSuccess(result);
-        mp.msg.info("Montage status: ".concat(success, " || ").concat(error));
+    mp.command_native_async({
+        name: "subprocess",
+        playback_only: false,
+        args: imageMagick.concat(imageMagickArgs),
+        capture_stderr: true,
+        capture_stdout: true
+    }, function (_, result, __) {
+        var _a = isMagickSuccess(result), success = _a[0], errorMsg = _a[1];
+        mp.msg.info("Montage status: ".concat(success, " || ").concat(errorMsg));
         if (success) {
-            runResize(imgOutput, videoHeight, function (result2, error2) {
+            runResize(outputFile, videoHeight, function (result2, error2) {
                 if (!result2) {
-                    callback(false, error2, imgOutput);
+                    callback(false, error2);
                 }
                 else {
-                    runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, function (result3, error3) {
-                        callback(result3, error3, imgOutput);
+                    runAnnotation(fileName, videoWidth, videoHeight, duration, outputFile, function (result3, error3) {
+                        callback(result3, error3);
                     });
                 }
             });
         }
         else {
-            callback(false, error, imgOutput);
+            callback(false, errorMsg);
         }
     });
 }
+/**
+ * Create a collection of screenshots from the video.
+ * @param {number} startTime - The start time of the video. (in seconds, relative to video duration)
+ * @param {number} timeStep - The time step in-between each screenshot. (in seconds)
+ * @param {string} screenshotDir - The temporary folder to be used to save the screenshot.
+ * @returns {string[] | undefined} - The list of screenshots created, or undefined if an error occurred.
+ */
 function screenshotCycles(startTime, timeStep, screenshotDir) {
     var rows = mosaicOptions.rows, columns = mosaicOptions.columns;
     var screenshots = [];
@@ -340,6 +472,10 @@ function screenshotCycles(startTime, timeStep, screenshotDir) {
     }
     return screenshots;
 }
+/**
+ * Check if the montage command is available. (also check Magick)
+ * @returns {boolean} - True if the montage command is available, false otherwise.
+ */
 function checkMagick() {
     var cmds = [];
     if (mosaicOptions.append_magick.toLowerCase() === "yes") {
@@ -350,6 +486,10 @@ function checkMagick() {
     var res = mp.command_native({ name: "subprocess", playback_only: false, args: cmds });
     return res.status === 0;
 }
+/**
+ * Check if the variables of an options are all valid.
+ * @returns {boolean} - True if all the options are valid, false otherwise.
+ */
 function verifyVariables() {
     if (mosaicOptions.rows < 1) {
         mp.osd_message("Mosaic rows must be greater than 0");
@@ -370,6 +510,11 @@ function verifyVariables() {
     }
     return true;
 }
+/**
+ * Send a formatted OSD message that support ASS tags.
+ * @param {string} message - The message to send
+ * @param {number} duration - The duration (in seconds, default to `2`)
+ */
 function sendOSD(message, duration) {
     if (duration === void 0) { duration = 2; }
     var prefix = mp.get_property("osd-ass-cc/0");
@@ -381,6 +526,11 @@ function sendOSD(message, duration) {
         mp.osd_message(message, duration);
     }
 }
+/**
+ * The main execution function, which includes all the check and everything.
+ * This should be called immediatly after a macro is executed.
+ * @returns {void} - Nothing
+ */
 function main() {
     // create a mosaic of screenshots
     var paths = new Pathing();
@@ -445,10 +595,13 @@ function main() {
     if (screenshots !== undefined) {
         mp.msg.info("Creating mosaic for ".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows, " images..."));
         mp.osd_message("Creating mosaic...", 2);
-        createMosaic(screenshots, videoWidth, videoHeight, mp.get_property("filename"), videoDuration, function (success, error, output) {
+        var fileName = mp.get_property("filename");
+        var outputDir = getOutputDir();
+        var imgOutput_1 = paths.fixPath(mp.utils.join_path(outputDir, "".concat(createOutputName(fileName), ".").concat(mosaicOptions.format)));
+        createMosaic(screenshots, videoWidth, videoHeight, fileName, videoDuration, imgOutput_1, function (success, error) {
             if (success) {
-                mp.msg.info("Mosaic created for ".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows, " images at ").concat(output, "..."));
-                sendOSD("Mosaic created!\n{\\b1}".concat(output, "{\\b0}"), 5);
+                mp.msg.info("Mosaic created for ".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows, " images at ").concat(imgOutput_1, "..."));
+                sendOSD("Mosaic created!\n{\\b1}".concat(imgOutput_1, "{\\b0}"), 5);
             }
             else {
                 mp.msg.error("Failed to create mosaic for ".concat(mosaicOptions.columns, "x").concat(mosaicOptions.rows, " images..."));
