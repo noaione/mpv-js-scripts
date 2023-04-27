@@ -131,26 +131,35 @@ var Pathing = /** @class */ (function () {
     return Pathing;
 }());
 mp.options.read_options(mosaicOptions, "screenshot-mosaic");
+function testDirectory(path) {
+    var paths = new Pathing();
+    var target = mp.utils.join_path(path, "_mosaic_screenshot_test.bin");
+    mp.utils.write_file(target, "THIS FILE IS CREATED BY MPV SCREENSHOT MOSAIC SCRIPT");
+    var isError = mp.last_error();
+    if (isError) {
+        mp.msg.error("Could not write to directory: " + path);
+        return false;
+    }
+    // delete
+    paths.deleteFile(target);
+    return true;
+}
 function getOutputDir() {
     var paths = new Pathing();
-    var cwd = paths.getCwd();
-    if (cwd) {
-        mp.msg.info("Using current working directory: " + cwd);
-        return paths.fixPath(cwd);
-    }
-    var lastErr = mp.last_error();
-    if (lastErr) {
-        mp.msg.error("Could not get current working directory: " + lastErr);
-    }
-    // Use the screenshot directory as a fallback.
+    // Use screenshot directory
     var screenDir = mp.get_property("screenshot-directory");
-    if (screenDir) {
-        mp.msg.info("Using screenshot directory as fallback: " + screenDir);
+    if (screenDir && testDirectory(screenDir)) {
+        mp.msg.info("Using screenshot directory: " + screenDir);
         return paths.fixPath(screenDir);
     }
+    // Use mpv home directory as fallback
     var homeDir = mp.command_native(["expand-path", "~~home/"]);
     mp.msg.error("Could not get screenshot directory, trying to use mpv home directory: ".concat(homeDir));
     return paths.fixPath(homeDir);
+}
+function isSuccess(result) {
+    // mpv subprocess actually return success even if magick fails.
+    return result.status === 0;
 }
 function humanizeBytes(bytes) {
     if (bytes === undefined)
@@ -218,9 +227,9 @@ function runResize(imgOutput, videoHeight, callback) {
     }
     mp.msg.info("Resizing image to x".concat(videoHeight, ": ").concat(imgOutput));
     dump(resizeCmds);
-    mp.command_native_async({ name: "subprocess", playback_only: false, args: resizeCmds }, function (success, _, error) {
-        mp.msg.info("Resize status: ".concat(success, " || ").concat(error));
-        callback(success, error);
+    mp.command_native_async({ name: "subprocess", playback_only: false, args: resizeCmds }, function (_, result, error) {
+        mp.msg.info("Resize status: ".concat(isSuccess(result), " || err? ").concat(error));
+        callback(isSuccess(result), error);
     });
 }
 function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, callback) {
@@ -268,9 +277,9 @@ function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, c
     ], false);
     mp.msg.info("Annotating image: ".concat(imgOutput));
     dump(annotateCmds);
-    mp.command_native_async({ name: "subprocess", playback_only: false, args: annotateCmds }, function (success, _, error) {
-        mp.msg.info("Annotate status: ".concat(success, " || ").concat(error));
-        callback(success, error);
+    mp.command_native_async({ name: "subprocess", playback_only: false, args: annotateCmds }, function (_, result, error) {
+        mp.msg.info("Annotate status: ".concat(isSuccess(result), " || err? ").concat(error));
+        callback(isSuccess(result), error);
     });
 }
 function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, callback) {
@@ -292,7 +301,8 @@ function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, 
     imageMagickArgs.push(imgOutput);
     mp.msg.info("Creating image montage: ".concat(imgOutput));
     dump(imageMagickArgs);
-    mp.command_native_async({ name: "subprocess", playback_only: false, args: imageMagick.concat(imageMagickArgs) }, function (success, _, error) {
+    mp.command_native_async({ name: "subprocess", playback_only: false, args: imageMagick.concat(imageMagickArgs) }, function (_, result, error) {
+        var success = isSuccess(result);
         mp.msg.info("Montage status: ".concat(success, " || ").concat(error));
         if (success) {
             runResize(imgOutput, videoHeight, function (result2, error2) {

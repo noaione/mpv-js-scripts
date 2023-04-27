@@ -12,7 +12,7 @@ Create a mosaic of an images like what MPC-HC does.
 
 ![Sample](https://p.ihateani.me/qklxfhvu.jpg)
 
-To run, just press `ctrl+alt+s`, it will create a `$fileName.mosaic$colx$row.png` file in the same folder as your video.
+To run, just press `ctrl+alt+s`, it will create a `$fileName.mosaic$colx$row.png` file in either your screenshot folder or the mpv home directory. (`~/.mpv` or `%APPDATA%/mpv`)
 
 You can modify the keybind:
 ```conf

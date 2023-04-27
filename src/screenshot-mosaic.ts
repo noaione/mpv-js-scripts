@@ -150,29 +150,40 @@ class Pathing {
 
 mp.options.read_options(mosaicOptions, "screenshot-mosaic");
 
+function testDirectory(path: string) {
+    const paths = new Pathing();
+
+    const target = mp.utils.join_path(path, "_mosaic_screenshot_test.bin");
+    mp.utils.write_file(target, "THIS FILE IS CREATED BY MPV SCREENSHOT MOSAIC SCRIPT");
+    const isError = mp.last_error();
+    if (isError) {
+        mp.msg.error("Could not write to directory: " + path);
+        return false;
+    }
+
+    // delete
+    paths.deleteFile(target);
+    return true;
+}
+
 function getOutputDir() {
     const paths = new Pathing();
-    const cwd = paths.getCwd();
-    if (cwd) {
-        mp.msg.info("Using current working directory: " + cwd);
-        return paths.fixPath(cwd);
-    }
-
-    const lastErr = mp.last_error();
-    if (lastErr) {
-        mp.msg.error("Could not get current working directory: " + lastErr);
-    }
-
-    // Use the screenshot directory as a fallback.
+    // Use screenshot directory
     const screenDir = mp.get_property("screenshot-directory");
-    if (screenDir) {
-        mp.msg.info("Using screenshot directory as fallback: " + screenDir);
+    if (screenDir && testDirectory(screenDir)) {
+        mp.msg.info("Using screenshot directory: " + screenDir);
         return paths.fixPath(screenDir);
     }
 
+    // Use mpv home directory as fallback
     const homeDir = mp.command_native(["expand-path", "~~home/"]) as string;
     mp.msg.error(`Could not get screenshot directory, trying to use mpv home directory: ${homeDir}`);
     return paths.fixPath(homeDir);
+}
+
+function isSuccess(result: SubprocessCommand) {
+    // mpv subprocess actually return success even if magick fails.
+    return result.status === 0;
 }
 
 function humanizeBytes(bytes?: number) {
@@ -189,6 +200,7 @@ function humanizeBytes(bytes?: number) {
     } while (Math.abs(bytes) >= thresh && u < units.length - 1);
     return bytes.toFixed(1) + ' ' + units[u];
 }
+
 function floor(n: number) {
     // no Math module
     return ~~n;
@@ -246,9 +258,9 @@ function runResize(imgOutput: string, videoHeight: number, callback: CallbackCha
     dump(resizeCmds)
     mp.command_native_async(
         {name: "subprocess", playback_only: false, args: resizeCmds},
-        (success, _, error) => {
-            mp.msg.info(`Resize status: ${success} || ${error}`);
-            callback(success, error);
+        (_, result, error) => {
+            mp.msg.info(`Resize status: ${isSuccess(result as SubprocessCommand)} || err? ${error}`);
+            callback(isSuccess(result as SubprocessCommand), error);
         }
     );
 }
@@ -301,9 +313,9 @@ function runAnnotation(fileName: string, videoWidth: number, videoHeight: number
     dump(annotateCmds)
     mp.command_native_async(
         {name: "subprocess", playback_only: false, args: annotateCmds},
-        (success, _, error) => {
-            mp.msg.info(`Annotate status: ${success} || ${error}`);
-            callback(success, error)
+        (_, result, error) => {
+            mp.msg.info(`Annotate status: ${isSuccess(result as SubprocessCommand)} || err? ${error}`);
+            callback(isSuccess(result as SubprocessCommand), error);
         }
     )
 }
@@ -329,7 +341,8 @@ function createMosaic(screenshots: string[], videoWidth: number, videoHeight: nu
     dump(imageMagickArgs)
     mp.command_native_async(
         {name: "subprocess", playback_only: false, args: imageMagick.concat(imageMagickArgs)},
-        (success, _, error) => {
+        (_, result, error) => {
+            const success = isSuccess(result as SubprocessCommand);
             mp.msg.info(`Montage status: ${success} || ${error}`);
             if (success) {
                 runResize(imgOutput, videoHeight, (result2, error2) => {
