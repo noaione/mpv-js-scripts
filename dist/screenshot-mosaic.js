@@ -192,7 +192,7 @@ function getOutputDir() {
         var lastError = mp.last_error();
         if (!lastError && testDirectory(expandScreenDir)) {
             mp.msg.info("Using screenshot directory: " + expandScreenDir);
-            return paths.fixPath(screenDir);
+            return paths.fixPath(expandScreenDir);
         }
     }
     // Use mpv home directory as fallback
