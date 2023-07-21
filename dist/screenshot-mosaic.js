@@ -11,10 +11,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
  * This script will take a screenshot of a video and create a mosaic of that said video.
  * It will take a screenshot of determined number of rows and columns, and then create
  * a montage of those screenshots.
- * 
+ *
  * This .js file is a compiled version of the .ts file, you can compile it yourself by
  * running `npm run compile:mosaic`.
- * 
+ *
  * Created by: N4O#8868 (noaione)
  * License: MIT
  */
@@ -171,7 +171,7 @@ function testDirectory(path) {
     try {
         mp.utils.write_file("file://".concat(target), "THIS FILE IS CREATED BY MPV SCREENSHOT MOSAIC SCRIPT");
     }
-    catch (error) {
+    catch (e) {
         mp.msg.error("Could not write to directory: " + path);
         return false;
     }

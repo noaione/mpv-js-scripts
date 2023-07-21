@@ -192,9 +192,9 @@ function testDirectory(path: string): boolean {
     const paths = new Pathing();
 
     const target = mp.utils.join_path(path, "_mosaic_screenshot_test.bin");
-    mp.utils.write_file(`file://${target}`, "THIS FILE IS CREATED BY MPV SCREENSHOT MOSAIC SCRIPT");
-    const isError = mp.last_error();
-    if (isError) {
+    try {
+        mp.utils.write_file(`file://${target}`, "THIS FILE IS CREATED BY MPV SCREENSHOT MOSAIC SCRIPT");
+    } catch (e) {
         mp.msg.error("Could not write to directory: " + path);
         return false;
     }
