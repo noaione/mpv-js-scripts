@@ -155,6 +155,9 @@ var Pathing = /** @class */ (function () {
                 path = path.replace(/\//g, "\\");
             }
         }
+        if (path.indexOf("Program Files")) {
+            path = path.replace("Program Files", "Progra~1");
+        }
         return path;
     };
     return Pathing;
