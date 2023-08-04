@@ -44,4 +44,6 @@ append_magick=no
 # have a montage that is basically 4k * whatever the number of screenshots you have.
 # It would be way too big, so this will resize it back to the video height.
 resize=yes
+# The quality of the final montage image.
+quality=90
 ```

@@ -26,6 +26,9 @@ var mosaicOptions = {
     // Padding between screenshots (pixels)
     padding: 10,
     // Output format
+    /**
+     * @type {"png" | "jpg" | "webp"}
+     */
     format: "png",
     // Screenshot mode
     /**
@@ -40,7 +43,9 @@ var mosaicOptions = {
     // I recommend keeping this enabled since if you have a 4k video, you don't want to
     // have a montage that is basically 4k * whatever the number of screenshots you have.
     // It would be way too big, so this will resize it back to the video height.
-    resize: "yes"
+    resize: "yes",
+    // The quality of the final montage image.
+    quality: 90
 };
 /**
  * The result of running a subprocess.
@@ -310,16 +315,16 @@ function runResize(imgOutput, videoHeight, callback) {
     }
     var resizeCmds = __spreadArray(__spreadArray([], resizeCmdsBase, true), [
         "convert",
-        imgOutput,
+        "".concat(imgOutput, ".montage.png"),
         "-resize",
         "x".concat(videoHeight),
-        imgOutput,
+        "".concat(imgOutput, ".montage.png"),
     ], false);
     if (mosaicOptions.resize.toLowerCase() !== "yes") {
         callback(true, undefined);
         return;
     }
-    mp.msg.info("Resizing image to x".concat(videoHeight, ": ").concat(imgOutput));
+    mp.msg.info("Resizing image to x".concat(videoHeight, ": ").concat(imgOutput, ".montage.png"));
     dump(resizeCmds);
     mp.command_native_async({
         name: "subprocess",
@@ -372,8 +377,10 @@ function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, c
         // Add left margin
         "-splice",
         "10x0",
-        imgOutput,
+        "".concat(imgOutput, ".montage.png"),
         "-append",
+        "-quality",
+        "".concat(mosaicOptions.quality, "%"),
         imgOutput,
     ], false);
     mp.msg.info("Annotating image: ".concat(imgOutput));
@@ -414,8 +421,8 @@ function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, 
     for (var i = 0; i < screenshots.length; i++) {
         imageMagickArgs.push(screenshots[i]);
     }
-    imageMagickArgs.push(outputFile);
-    mp.msg.info("Creating image montage: ".concat(outputFile));
+    imageMagickArgs.push("".concat(outputFile, ".montage.png"));
+    mp.msg.info("Creating image montage: ".concat(outputFile, ".montage.png"));
     dump(imageMagickArgs);
     mp.command_native_async({
         name: "subprocess",
@@ -610,6 +617,7 @@ function main() {
             screenshots.forEach(function (sspath) {
                 paths.deleteFile(paths.fixPath(sspath));
             });
+            paths.deleteFile(paths.fixPath("".concat(imgOutput_1, ".montage.png")));
         });
     }
 }

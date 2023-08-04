@@ -18,6 +18,9 @@ const mosaicOptions = {
     // Padding between screenshots (pixels)
     padding: 10,
     // Output format
+    /**
+     * @type {"png" | "jpg" | "webp"}
+     */
     format: "png",
     // Screenshot mode
     /**
@@ -33,6 +36,8 @@ const mosaicOptions = {
     // have a montage that is basically 4k * whatever the number of screenshots you have.
     // It would be way too big, so this will resize it back to the video height.
     resize: "yes",
+    // The quality of the final montage image.
+    quality: 90,
 }
 
 /**
@@ -344,16 +349,16 @@ function runResize(imgOutput: string, videoHeight: number, callback: CallbackCha
     const resizeCmds = [
         ...resizeCmdsBase,
         "convert",
-        imgOutput,
+        `${imgOutput}.montage.png`,
         "-resize",
         `x${videoHeight}`,
-        imgOutput,
+        `${imgOutput}.montage.png`,
     ]
     if (mosaicOptions.resize.toLowerCase() !== "yes") {
         callback(true, undefined);
         return;
     }
-    mp.msg.info(`Resizing image to x${videoHeight}: ${imgOutput}`)
+    mp.msg.info(`Resizing image to x${videoHeight}: ${imgOutput}.montage.png`)
     dump(resizeCmds)
     mp.command_native_async(
         {
@@ -425,8 +430,10 @@ function runAnnotation(
         "-splice",
         "10x0",
 
-        imgOutput,
+        `${imgOutput}.montage.png`,
         "-append",
+        "-quality",
+        `${mosaicOptions.quality}%`,
         imgOutput,
     ];
     mp.msg.info(`Annotating image: ${imgOutput}`)
@@ -479,8 +486,8 @@ function createMosaic(
     for (let i = 0; i < screenshots.length; i++) {
         imageMagickArgs.push(screenshots[i]);
     }
-    imageMagickArgs.push(outputFile);
-    mp.msg.info(`Creating image montage: ${outputFile}`)
+    imageMagickArgs.push(`${outputFile}.montage.png`);
+    mp.msg.info(`Creating image montage: ${outputFile}.montage.png`)
     dump(imageMagickArgs)
     mp.command_native_async(
         {
@@ -691,7 +698,8 @@ function main(): void {
             mp.msg.info("Cleaning up...");
             screenshots.forEach((sspath) => {
                 paths.deleteFile(paths.fixPath(sspath));
-            })
+            });
+            paths.deleteFile(paths.fixPath(`${imgOutput}.montage.png`));
         });
     }
 }
