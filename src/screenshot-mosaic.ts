@@ -177,8 +177,11 @@ class Pathing {
                 path = path.replace(/\//g, "\\");
             }
         }
+        if (path.indexOf("Program Files (x86)")) {
+            path = path.replace("Program Files (x86)", "PROGRA~2");
+        }
         if (path.indexOf("Program Files")) {
-            path = path.replace("Program Files", "Progra~1");
+            path = path.replace("Program Files", "PROGRA~1");
         }
         return path;
     }
@@ -404,7 +407,7 @@ function runAnnotation(
         "-gravity",
         "northwest",
 
-        //add top margin
+        // Add top margin
         "-splice",
         "0x10",
 
@@ -432,9 +435,9 @@ function runAnnotation(
         "-gravity",
         "northwest",
 
-        //add left margin
+        // Add left margin
         "-splice",
-        "20x0",
+        "10x0",
 
         imgOutput,
         "-append",

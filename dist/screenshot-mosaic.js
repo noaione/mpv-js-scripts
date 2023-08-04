@@ -155,8 +155,11 @@ var Pathing = /** @class */ (function () {
                 path = path.replace(/\//g, "\\");
             }
         }
+        if (path.indexOf("Program Files (x86)")) {
+            path = path.replace("Program Files (x86)", "PROGRA~2");
+        }
         if (path.indexOf("Program Files")) {
-            path = path.replace("Program Files", "Progra~1");
+            path = path.replace("Program Files", "PROGRA~1");
         }
         return path;
     };
@@ -348,48 +351,39 @@ function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, c
     }
     var annotateCmds = __spreadArray(__spreadArray([], annotateCmdsBase, true), [
         "convert",
-
         "-background",
         "white",
-
         "-pointsize",
         "40",
         "label:mpv Media Player",
         "-gravity",
         "northwest",
-
-        //add top margin
+        // Add top margin
         "-splice",
         "0x10",
-
         "-pointsize",
         "16",
         "label:File Name: " + fileName + "",
         "-gravity",
         "northwest",
-
         "-pointsize",
         "16",
         "label:File Size: " + humanizeBytes(mp.get_property_number("file-size")) + "",
         "-gravity",
         "northwest",
-
         "-pointsize",
         "16",
         "label:Resolution: " + videoWidth + "x" + videoHeight + "",
         "-gravity",
         "northwest",
-
         "-pointsize",
         "16",
         "label:Duration: " + duration + "",
         "-gravity",
         "northwest",
-        
-        //add left margin
+        // Add left margin
         "-splice",
-        "20x0",
-
+        "10x0",
         imgOutput,
         "-append",
         imgOutput,
