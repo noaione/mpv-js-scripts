@@ -403,9 +403,9 @@ function runAnnotation(
 
         "-pointsize",
         "40",
-        "label:mpv Media Player",
         "-gravity",
         "northwest",
+        "label:mpv Media Player",
 
         // Add top margin
         "-splice",
@@ -413,27 +413,13 @@ function runAnnotation(
 
         "-pointsize",
         "16",
+        "-gravity",
+        "northwest",
+
         "label:File Name: " + fileName + "",
-        "-gravity",
-        "northwest",
-
-        "-pointsize",
-        "16",
         "label:File Size: " + humanizeBytes(mp.get_property_number("file-size")) + "",
-        "-gravity",
-        "northwest",
-
-        "-pointsize",
-        "16",
         "label:Resolution: " + videoWidth + "x" + videoHeight + "",
-        "-gravity",
-        "northwest",
-
-        "-pointsize",
-        "16",
         "label:Duration: " + duration + "",
-        "-gravity",
-        "northwest",
 
         // Add left margin
         "-splice",
