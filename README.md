@@ -50,6 +50,8 @@ quality=90
 
 #### UOSC Support
 
+![Screenshot Mosaic - uosc Menu](https://p.ihateani.me/nfvjqlnf.png)
+
 This script has support for [`uosc`](https://github.com/tomasklaen/uosc)
 
 In your `uosc.conf`, you can add a controls for screenshot-mosaic by adding the following command:
