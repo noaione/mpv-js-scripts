@@ -6,11 +6,28 @@
  * This .js file is a compiled version of the .ts file, you can compile it yourself by
  * running `npm run compile:mosaic`.
  * 
- * Created by: N4O#8868 (noaione)
+ * Created by: noaione
  * License: MIT
+ * Version: 2023.11.22.1
  */
 
-const mosaicOptions = {
+const scriptName = mp.get_script_name();
+const uoscMenuName = `${scriptName}_uosc_menu`;
+
+type MosaicOptions = {
+    rows: number;
+    columns: number;
+    padding: number;
+    format: "png" | "jpg" | "webp";
+    mode: "video" | "subtitles" | "window";
+    append_magick: "yes" | "no";
+    resize: "yes" | "no";
+    quality: number;
+}
+
+type MinimalMosaicOptions = Omit<MosaicOptions, "append_magick">;
+
+const mosaicOptions: MosaicOptions = {
     // Number of rows for screenshot
     rows: 3,
     // Number of columns for screenshot
@@ -318,11 +335,12 @@ function formatDurationToHHMMSS(seconds?: number): string {
 /**
  * Format an output filename with some constraints and extra info.
  * @param {string} fileName - The original filename
+ * @param {MinimalMosaicOptions} options - The options to use
  * @returns {string} - The new filename
  */
-function createOutputName(fileName: string): string {
+function createOutputName(fileName: string, options: MinimalMosaicOptions): string {
     let finalName = fileName.replace(" ", "_");
-    const ColRow = `${mosaicOptions.columns}x${mosaicOptions.rows}`;
+    const ColRow = `${options.columns}x${options.rows}`;
     const mosaicName = `.mosaic${ColRow}`;
     // Max count is 256 characters, with safety margin to 224
     const testCount = finalName.length + mosaicName.length;
@@ -338,12 +356,13 @@ function createOutputName(fileName: string): string {
  * Run the resize command, will be skipped if resize is disabled.
  * @param {string} imgOutput - The image output path.
  * @param {number} videoHeight - The video height.
+ * @param {MosaicOptions} options - The options to use.
  * @param {CallbackChain} callback - The callback chain that will be called.
  * @returns {void} - Nothing
  */
-function runResize(imgOutput: string, videoHeight: number, callback: CallbackChain): void {
+function runResize(imgOutput: string, videoHeight: number, options: MosaicOptions, callback: CallbackChain): void {
     const resizeCmdsBase = [];
-    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+    if (options.append_magick.toLowerCase() === "yes") {
         resizeCmdsBase.push("magick");
     }
     const resizeCmds = [
@@ -354,7 +373,7 @@ function runResize(imgOutput: string, videoHeight: number, callback: CallbackCha
         `x${videoHeight}`,
         `${imgOutput}.montage.png`,
     ]
-    if (mosaicOptions.resize.toLowerCase() !== "yes") {
+    if (options.resize.toLowerCase() !== "yes") {
         callback(true, undefined);
         return;
     }
@@ -383,6 +402,7 @@ function runResize(imgOutput: string, videoHeight: number, callback: CallbackCha
  * @param {number} videoHeight - The video height.
  * @param {string} duration - The video duration (pre-formatted).
  * @param {string} imgOutput - The image output path.
+ * @param {MosaicOptions} options - The options to use.
  * @param {CallbackChain} callback - The callback chain that will be called.
  * @returns {void} - Nothing
  */
@@ -392,11 +412,12 @@ function runAnnotation(
     videoHeight: number,
     duration: string,
     imgOutput: string,
+    options: MosaicOptions,
     callback: CallbackChain
 ): void {
     // annotate text
     const annotateCmdsBase = [];
-    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+    if (options.append_magick.toLowerCase() === "yes") {
         annotateCmdsBase.push("magick");
     }
     const annotateCmds = [
@@ -433,7 +454,7 @@ function runAnnotation(
         `${imgOutput}.montage.png`,
         "-append",
         "-quality",
-        `${mosaicOptions.quality}%`,
+        `${options.quality}%`,
         imgOutput,
     ];
     mp.msg.info(`Annotating image: ${imgOutput}`)
@@ -462,6 +483,7 @@ function runAnnotation(
  * @param {string} fileName - The video filename.
  * @param {string} duration - The video duration (pre-formatted).
  * @param {string} outputFile - The image output path.
+ * @param {MosaicOptions} options - The options to use.
  * @param {CallbackChain} callback - The callback chain that will be called.
  * @returns {void} - Nothing
  */
@@ -472,16 +494,17 @@ function createMosaic(
     fileName: string,
     duration: string,
     outputFile: string,
+    options: MosaicOptions,
     callback: CallbackChain
 ): void {
     const imageMagick = [];
-    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+    if (options.append_magick.toLowerCase() === "yes") {
         imageMagick.push("magick");
     }
     const imageMagickArgs = [
         "montage",
         "-geometry",
-        `${videoWidth}x${videoHeight}+${mosaicOptions.padding}+${mosaicOptions.padding}`,
+        `${videoWidth}x${videoHeight}+${options.padding}+${options.padding}`,
     ];
     for (let i = 0; i < screenshots.length; i++) {
         imageMagickArgs.push(screenshots[i]);
@@ -501,11 +524,11 @@ function createMosaic(
             const [success, errorMsg] = isMagickSuccess(result as SubprocessResult);
             mp.msg.info(`Montage status: ${success} || ${errorMsg}`);
             if (success) {
-                runResize(outputFile, videoHeight, (result2, error2) => {
+                runResize(outputFile, videoHeight, options, (result2, error2) => {
                     if (!result2) {
                         callback(false, error2);
                     } else {
-                        runAnnotation(fileName, videoWidth, videoHeight, duration, outputFile, (result3, error3) => {
+                        runAnnotation(fileName, videoWidth, videoHeight, duration, outputFile, options, (result3, error3) => {
                             callback(result3, error3);
                         });
                     }
@@ -523,10 +546,11 @@ function createMosaic(
  * @param {number} startTime - The start time of the video. (in seconds, relative to video duration)
  * @param {number} timeStep - The time step in-between each screenshot. (in seconds)
  * @param {string} screenshotDir - The temporary folder to be used to save the screenshot.
+ * @param {MosaicOptions} options - The options to use.
  * @returns {string[] | undefined} - The list of screenshots created, or undefined if an error occurred.
  */
-function screenshotCycles(startTime: number, timeStep: number, screenshotDir: string): string[] | undefined {
-    const { rows, columns } = mosaicOptions;
+function screenshotCycles(startTime: number, timeStep: number, screenshotDir: string, options: MosaicOptions): string[] | undefined {
+    const { rows, columns } = options;
 
     const screenshots: string[] = [];
     const totalImages = rows * columns;
@@ -536,7 +560,7 @@ function screenshotCycles(startTime: number, timeStep: number, screenshotDir: st
         mp.command_native(["seek", tTarget, "absolute", "exact"]);
         // wait until seeking done
         const imagePath = mp.utils.join_path(screenshotDir, `temp_screenshot-${i}.png`);
-        mp.command_native(["screenshot-to-file", imagePath, mosaicOptions.mode]) as string;
+        mp.command_native(["screenshot-to-file", imagePath, options.mode]) as string;
         const errorMsg = mp.last_error();
         if (errorMsg.length > 0) {
             mp.osd_message("Error taking screenshot: " + errorMsg);
@@ -564,22 +588,23 @@ function checkMagick(): boolean {
 
 /**
  * Check if the variables of an options are all valid.
+ * @param {MosaicOptions} options - The options to check.
  * @returns {boolean} - True if all the options are valid, false otherwise.
  */
-function verifyVariables(): boolean {
-    if (mosaicOptions.rows < 1) {
+function verifyVariables(options: MosaicOptions): boolean {
+    if (options.rows < 1) {
         mp.osd_message("Mosaic rows must be greater than 0");
         return false;
     }
-    if (mosaicOptions.columns < 1) {
+    if (options.columns < 1) {
         mp.osd_message("Mosaic columns must be greater than 0");
         return false;
     }
-    if (mosaicOptions.padding < 0) {
+    if (options.padding < 0) {
         mp.osd_message("Mosaic padding must be greater than or equal to 0");
         return false;
     }
-    const mosaicMode = mosaicOptions.mode.toLowerCase();
+    const mosaicMode = options.mode.toLowerCase();
     if (mosaicMode !== "video" && mosaicMode !== "subtitles" && mosaicMode !== "window") {
         mp.osd_message("Mosaic mode must be either 'video' or 'subtitles' or 'window'");
         return false;
@@ -606,12 +631,14 @@ function sendOSD(message: string, duration: number = 2): void {
 /**
  * The main execution function, which includes all the check and everything.
  * This should be called immediatly after a macro is executed.
+ * 
+ * @param {MosaicOptions} options - Options
  * @returns {void} - Nothing
  */
-function main(): void {
+function entrypoint(options: MosaicOptions): void {
     // create a mosaic of screenshots
     const paths = new Pathing();
-    if (!verifyVariables()) {
+    if (!verifyVariables(options)) {
         return;
     }
     const magickExist = checkMagick();
@@ -621,7 +648,7 @@ function main(): void {
         mp.osd_message(`ImageMagick cannot be found, please install it.\nOr you can set append_magick to ${tf} in the script options.`, 5);
         return;
     }
-    const imageCount = mosaicOptions.rows * mosaicOptions.columns;
+    const imageCount = options.rows * options.columns;
     // get video length and divide by number of screenshots
     const videoLength = mp.get_property_number("duration");
     if (videoLength === undefined) {
@@ -648,10 +675,10 @@ function main(): void {
     }
 
     mp.msg.info("Running Mosaic Tools with the following options:");
-    mp.msg.info("  Rows: " + mosaicOptions.rows);
-    mp.msg.info("  Columns: " + mosaicOptions.columns);
-    mp.msg.info("  Padding: " + mosaicOptions.padding);
-    mp.msg.info("  Format: " + mosaicOptions.format);
+    mp.msg.info("  Rows: " + options.rows);
+    mp.msg.info("  Columns: " + options.columns);
+    mp.msg.info("  Padding: " + options.padding);
+    mp.msg.info("  Format: " + options.format);
     mp.msg.info("  Video Length: " + videoLength);
     mp.msg.info("  Video Width: " + videoWidth);
     mp.msg.info("  Video Height: " + videoHeight);
@@ -661,22 +688,22 @@ function main(): void {
     const startTime = videoLength * 0.1;
     const endTime = videoLength * 0.9;
     const timeStep = (endTime - startTime) / (imageCount - 1);
-    mp.osd_message(`Creating ${mosaicOptions.columns}x${mosaicOptions.rows} mosaic of ${imageCount} screenshots...`, 2);
-    mp.msg.info(`Creating ${mosaicOptions.columns}x${mosaicOptions.rows} mosaic of ${imageCount} screenshots...`);
+    mp.osd_message(`Creating ${options.columns}x${options.rows} mosaic of ${imageCount} screenshots...`, 2);
+    mp.msg.info(`Creating ${options.columns}x${options.rows} mosaic of ${imageCount} screenshots...`);
     // pause video
     const homeDir = mp.command_native(["expand-path", "~~home/"])  as string;
     const screenshotDir = paths.fixPath(mp.utils.join_path(homeDir, "screenshot-mosaic"));
     paths.createDirectory(screenshotDir);
     mp.set_property("pause", "yes");
-    const screenshots = screenshotCycles(startTime, timeStep, screenshotDir);
+    const screenshots = screenshotCycles(startTime, timeStep, screenshotDir, options);
     mp.set_property_number("time-pos", originalTimePos);
     mp.set_property("pause", "no");
     if (screenshots !== undefined) {
-        mp.msg.info(`Creating mosaic for ${mosaicOptions.columns}x${mosaicOptions.rows} images...`)
+        mp.msg.info(`Creating mosaic for ${options.columns}x${options.rows} images...`)
         mp.osd_message("Creating mosaic...", 2);
         const fileName = mp.get_property("filename") as string;
         const outputDir = getOutputDir();
-        const imgOutput = paths.fixPath(mp.utils.join_path(outputDir, `${createOutputName(fileName)}.${mosaicOptions.format}`));
+        const imgOutput = paths.fixPath(mp.utils.join_path(outputDir, `${createOutputName(fileName, options)}.${options.format}`));
 
         createMosaic(
             screenshots,
@@ -685,14 +712,15 @@ function main(): void {
             fileName,
             videoDuration,
             imgOutput,
+            options,
             (success, error) => {
             if (success) {
-                mp.msg.info(`Mosaic created for ${mosaicOptions.columns}x${mosaicOptions.rows} images at ${imgOutput}...`);
+                mp.msg.info(`Mosaic created for ${options.columns}x${options.rows} images at ${imgOutput}...`);
                 sendOSD(`Mosaic created!\n{\\b1}${imgOutput}{\\b0}`, 5);
             } else {
-                mp.msg.error(`Failed to create mosaic for ${mosaicOptions.columns}x${mosaicOptions.rows} images...`);
+                mp.msg.error(`Failed to create mosaic for ${options.columns}x${options.rows} images...`);
                 mp.msg.error(error);
-                mp.osd_message(`Failed to create mosaic for ${mosaicOptions.columns}x${mosaicOptions.rows} images...`, 5);
+                mp.osd_message(`Failed to create mosaic for ${options.columns}x${options.rows} images...`, 5);
             }
             // Cleanup
             mp.msg.info("Cleaning up...");
@@ -704,5 +732,209 @@ function main(): void {
     }
 }
 
-mp.add_key_binding("Ctrl+Alt+s", "screenshot-mosaic", main);
+mp.add_key_binding("Ctrl+Alt+s", "screenshot", () => {
+    entrypoint(mosaicOptions);
+});
 
+/** UOSC Related Code */
+
+const UOSCState: MinimalMosaicOptions = {
+    rows: 3,
+    columns: 4,
+    padding: 10,
+    format: "png",
+    mode: "video",
+    resize: "yes",
+    quality: 90,
+}
+
+type UOSCDispatchData = {
+    key: string;
+    value: string;
+    format: string;
+}
+
+function resetStateWithConfig() {
+    for (const key in UOSCState) {
+        // @ts-expect-error
+        UOSCState[key as keyof MinimalMosaicOptions] = mosaicOptions[key as keyof MosaicOptions];
+    }
+}
+
+function createUOSCMenu(): Menu {
+    return {
+        type: uoscMenuName,
+        title: "Screenshot Mosaic",
+        keep_open: true,
+        items: [
+            {
+                title: "Rows",
+                hint: UOSCState.rows.toString(),
+                items: [
+                    {
+                        title: "+1",
+                        icon: "keyboard_arrow_up",
+                        value: uoscUpdateDispatch("rows", UOSCState.rows + 1),
+                    },
+                    {
+                        title: "-1",
+                        icon: "keyboard_arrow_down",
+                        value: uoscUpdateDispatch("rows", UOSCState.rows - 1 < 1 ? 1 : UOSCState.rows - 1),
+                    },
+                ]
+            },
+            {
+                title: "Columns",
+                hint: UOSCState.columns.toString(),
+                items: [
+                    {
+                        title: "+1",
+                        icon: "keyboard_arrow_up",
+                        value: uoscUpdateDispatch("columns", UOSCState.columns + 1),
+                    },
+                    {
+                        title: "-1",
+                        icon: "keyboard_arrow_down",
+                        value: uoscUpdateDispatch("columns", UOSCState.columns - 1 < 1 ? 1 : UOSCState.columns - 1),
+                    },
+                ]
+            },
+            {
+                title: "Padding",
+                hint: UOSCState.padding.toString(),
+                items: [
+                    {
+                        title: "+5",
+                        icon: "keyboard_double_arrow_up",
+                        value: uoscUpdateDispatch("padding", UOSCState.padding + 5),
+                    },
+                    {
+                        title: "+1",
+                        icon: "keyboard_arrow_up",
+                        value: uoscUpdateDispatch("padding", UOSCState.padding + 1),
+                    },
+                    {
+                        title: "-1",
+                        icon: "keyboard_arrow_down",
+                        value: uoscUpdateDispatch("padding", UOSCState.padding - 1 < 1 ? 1 : UOSCState.padding - 1),
+                    },
+                    {
+                        title: "-5",
+                        icon: "keyboard_double_arrow_down",
+                        value: uoscUpdateDispatch("padding", UOSCState.padding - 5 < 1 ? 1 : UOSCState.padding - 5),
+                    },
+                ]
+            },
+            {
+                title: "Format",
+                hint: UOSCState.format,
+                icon: "image",
+                items: [
+                    {
+                        title: "PNG",
+                        icon: UOSCState.format === "png" ? "radio_button_checked" : "radio_button_unchecked",
+                        value: uoscUpdateDispatch("format", "png"),
+                    },
+                    {
+                        title: "JPEG",
+                        icon: UOSCState.format === "jpg" ? "radio_button_checked" : "radio_button_unchecked",
+                        value: uoscUpdateDispatch("format", "jpg"),
+                    },
+                    {
+                        title: "WebP",
+                        icon: UOSCState.format === "webp" ? "radio_button_checked" : "radio_button_unchecked",
+                        value: uoscUpdateDispatch("format", "webp"),
+                    },
+                ]
+            },
+            {
+                title: "Screenshot Mode",
+                hint: UOSCState.mode,
+                icon: "burst_mode",
+                items: [
+                    {
+                        title: "Video only",
+                        icon: UOSCState.mode === "video" ? "radio_button_checked" : "radio_button_unchecked",
+                        value: uoscUpdateDispatch("mode", "video"),
+                    },
+                    {
+                        title: "Video + Subtitles",
+                        icon: UOSCState.mode === "subtitles" ? "radio_button_checked" : "radio_button_unchecked",
+                        value: uoscUpdateDispatch("mode", "subtitles"),
+                    },
+                    {
+                        title: "Whole window",
+                        icon: UOSCState.mode === "window" ? "radio_button_checked" : "radio_button_unchecked",
+                        value: uoscUpdateDispatch("mode", "window"),
+                    },
+                ]
+            },
+            {
+                title: "Resize",
+                icon: UOSCState.resize === "yes" ? "check_box" : "check_box_outline_blank",
+                value: uoscUpdateDispatch("resize", UOSCState.resize === "yes" ? "no" : "yes"),
+            },
+            {
+                title: "Reset",
+                icon: "restart_alt",
+                value: `script-message-to ${scriptName} uosc-menu-reset`,
+            },
+            {
+                title: "Create Mosaic Screenshot",
+                icon: "screenshot_monitor",
+                value: `script-message-to ${scriptName} uosc-menu-execute`,
+                keep_open: false,
+            }
+        ]
+    }
+}
+
+function uoscUpdateDispatch<
+    T extends keyof MinimalMosaicOptions = keyof MinimalMosaicOptions,
+>(key: T, value: MinimalMosaicOptions[T]): string {
+    const jsonData = JSON.stringify({
+        key,
+        value: String(value),
+        format: typeof value,
+    } as UOSCDispatchData);
+    return `script-message-to ${scriptName} uosc-menu-update ${jsonData}`;
+}
+
+function uoscUpdateConsume(rawData: unknown) {
+    if (typeof rawData !== "string") return;
+    const {key, value, format} = JSON.parse(rawData) as UOSCDispatchData;
+    if (key in UOSCState) {
+        if (format === "number") {
+            const parsed = parseInt(value);
+            if (!isNaN(parsed)) {
+                // @ts-expect-error
+                UOSCState[key as keyof MinimalMosaicOptions] = parsed;
+            }
+        } else if (format === "string") {
+            // @ts-expect-error
+            UOSCState[key as keyof MinimalMosaicOptions] = value;
+        } else if (format === "boolean") {
+            // @ts-expect-error
+            UOSCState[key as keyof MinimalMosaicOptions] = value === "true" ? "yes" : "no";
+        }
+    }
+    const menu = createUOSCMenu();
+    mp.commandv("script-message-to", "uosc", "update-menu", JSON.stringify(menu));
+}
+
+mp.add_key_binding(null, "uosc-menu", () => {
+    const menu = createUOSCMenu();
+    mp.commandv("script-message-to", "uosc", "open-menu", JSON.stringify(menu));
+})
+
+mp.register_script_message("uosc-menu-update", uoscUpdateConsume)
+mp.register_script_message("uosc-menu-reset", () => {
+    resetStateWithConfig();
+    const menu = createUOSCMenu();
+    mp.commandv("script-message-to", "uosc", "update-menu", JSON.stringify(menu));
+})
+mp.register_script_message("uosc-menu-execute", () => {
+    const mergedConfig = {...mosaicOptions, ...UOSCState};
+    resetStateWithConfig();
+    entrypoint(mergedConfig);
+})

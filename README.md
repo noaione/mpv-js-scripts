@@ -16,7 +16,7 @@ To run, just press `ctrl+alt+s`, it will create a `$fileName.mosaic$colx$row.png
 
 You can modify the keybind:
 ```conf
-ctrl+alt+s script-binding screenshot-mosaic
+ctrl+alt+s script-binding screenshot_mosaic/screenshot
 ```
 
 You can also modify the configuration by adding `screenshot-mosaic.conf` on your `script-opts` folder:
@@ -46,4 +46,23 @@ append_magick=no
 resize=yes
 # The quality of the final montage image.
 quality=90
+```
+
+#### UOSC Support
+
+This script has support for [`uosc`](https://github.com/tomasklaen/uosc)
+
+In your `uosc.conf`, you can add a controls for screenshot-mosaic by adding the following command:
+```
+<video>command:screenshot_monitor:script-binding screenshot_mosaic/screenshot?Screenshot Mosaic
+```
+You can add it before the first `gap` so it shows on the left side.
+
+Another way to execute `screnshot-mosaic` is to use the menu where you can configure `screenshot-mosaic` first before executing it.
+
+You can just change the `screenshot_mosaic/screenshot` in above controls command into `screenshot_mosaic/uosc-menu`
+
+You can also put it in your `input.conf` by using the `#!` shorthand:
+```
+#           script-binding screenshot_mosaic/uosc-menu    #! Screenshot Mosaic
 ```

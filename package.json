@@ -4,7 +4,7 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "compile:mosaic": "tsc --out dist\\screenshot-mosaic.js src\\screenshot-mosaic.ts"
+    "compile": "tsc"
   },
   "devDependencies": {
     "typescript": "^4.8.4"
