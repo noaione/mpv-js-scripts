@@ -48,21 +48,6 @@ var mosaicOptions = {
     quality: 90
 };
 /**
- * The result of running a subprocess.
- * @typedef {Object} SubprocessResult
- * @property {string | undefined} stdout - The stdout of the command.
- * @property {string | undefined} stderr - The stderr of the command.
- * @property {number} status - The exit code of the command.
- * @property {boolean} killed_by_us - Whether the command was killed by us.
- * @property {string} error_string - The error string of the command.
- */
-/**
- * The callback chain for montage -> resize -> annotate
- * @callback CallbackChain
- * @param {boolean} success - Whether the command was successful.
- * @param {string | undefined} error - The error string of the command.
- */
-/**
  * @class Pathing
  */
 var Pathing = /** @class */ (function () {
@@ -156,14 +141,14 @@ var Pathing = /** @class */ (function () {
     };
     Pathing.prototype.fixPath = function (path) {
         if (!this.isUnix()) {
-            if (path.indexOf("/")) {
+            if (path.indexOf("/") !== -1) {
                 path = path.replace(/\//g, "\\");
             }
         }
-        if (path.indexOf("Program Files (x86)")) {
+        if (path.indexOf("Program Files (x86)") !== -1) {
             path = path.replace("Program Files (x86)", "PROGRA~2");
         }
-        if (path.indexOf("Program Files")) {
+        if (path.indexOf("Program Files") !== -1) {
             path = path.replace("Program Files", "PROGRA~1");
         }
         return path;

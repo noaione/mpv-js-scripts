@@ -178,14 +178,14 @@ class Pathing {
 
     fixPath(path: string) {
         if (!this.isUnix()) {
-            if (path.indexOf("/")) {
+            if (path.indexOf("/") !== -1) {
                 path = path.replace(/\//g, "\\");
             }
         }
-        if (path.indexOf("Program Files (x86)")) {
+        if (path.indexOf("Program Files (x86)") !== -1) {
             path = path.replace("Program Files (x86)", "PROGRA~2");
         }
-        if (path.indexOf("Program Files")) {
+        if (path.indexOf("Program Files") !== -1) {
             path = path.replace("Program Files", "PROGRA~1");
         }
         return path;
