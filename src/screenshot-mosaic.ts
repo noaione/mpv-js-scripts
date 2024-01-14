@@ -713,6 +713,9 @@ function entrypoint(options: MosaicOptions): void {
 
     // Take screenshot and put it in callback to createMosaic
     screenshotCycles(startTime, timeStep, screenshotDir, options, (success, error, screenshots) => {
+        mp.set_property_number("time-pos", originalTimePos);
+        mp.set_property("pause", "no");
+
         if (!success) {
             mp.msg.error("Failed to create screenshots...");
             mp.msg.error(error);
@@ -720,8 +723,6 @@ function entrypoint(options: MosaicOptions): void {
             return;
         }
 
-        mp.set_property_number("time-pos", originalTimePos);
-        mp.set_property("pause", "no");
         if (screenshots.length > 0) {
             mp.msg.info(`Creating mosaic for ${options.columns}x${options.rows} images...`)
             mp.osd_message("Creating mosaic...", 2);
