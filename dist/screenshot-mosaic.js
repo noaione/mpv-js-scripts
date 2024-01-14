@@ -460,26 +460,35 @@ function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, 
  * @param {number} timeStep - The time step in-between each screenshot. (in seconds)
  * @param {string} screenshotDir - The temporary folder to be used to save the screenshot.
  * @param {MosaicOptions} options - The options to use.
- * @returns {string[] | undefined} - The list of screenshots created, or undefined if an error occurred.
+ * @param {CallbackChainScreenshot} callback - The callback chain that will be called.
  */
-function screenshotCycles(startTime, timeStep, screenshotDir, options) {
+function screenshotCycles(startTime, timeStep, screenshotDir, options, callback) {
     var rows = options.rows, columns = options.columns;
     var screenshots = [];
     var totalImages = rows * columns;
-    for (var i = 1; i <= totalImages; i++) {
-        var tTarget = startTime + (timeStep * (i - 1));
-        mp.command_native(["seek", tTarget, "absolute", "exact"]);
-        // wait until seeking done
-        var imagePath = mp.utils.join_path(screenshotDir, "temp_screenshot-".concat(i, ".png"));
-        mp.command_native(["screenshot-to-file", imagePath, options.mode]);
-        var errorMsg = mp.last_error();
-        if (errorMsg.length > 0) {
-            mp.osd_message("Error taking screenshot: " + errorMsg);
-            return undefined;
-        }
-        screenshots.push(imagePath);
+    // callback hell...
+    function callbackScreenshot(counter, screenshots) {
+        mp.command_native_async(["seek", (startTime + (timeStep * (counter - 1))), "absolute", "exact"], function (success, _, error) {
+            if (!success) {
+                callback(false, error, []);
+                return;
+            }
+            var imagePath = mp.utils.join_path(screenshotDir, "temp_screenshot-".concat(counter, ".png"));
+            mp.command_native_async(["screenshot-to-file", imagePath, options.mode], function (success, _, error) {
+                if (!success) {
+                    callback(false, error, screenshots);
+                }
+                // if counter is equal to totalImages, we are done
+                if (counter >= totalImages) {
+                    callback(true, undefined, screenshots);
+                    return;
+                }
+                // if not, loop again.
+                callbackScreenshot(counter + 1, __spreadArray(__spreadArray([], screenshots, true), [imagePath], false));
+            });
+        });
     }
-    return screenshots;
+    callbackScreenshot(1, screenshots);
 }
 /**
  * Check if the montage command is available. (also check Magick)
@@ -601,33 +610,41 @@ function entrypoint(options) {
     var screenshotDir = paths.fixPath(mp.utils.join_path(homeDir, "screenshot-mosaic"));
     paths.createDirectory(screenshotDir);
     mp.set_property("pause", "yes");
-    var screenshots = screenshotCycles(startTime, timeStep, screenshotDir, options);
-    mp.set_property_number("time-pos", originalTimePos);
-    mp.set_property("pause", "no");
-    if (screenshots !== undefined) {
-        mp.msg.info("Creating mosaic for ".concat(options.columns, "x").concat(options.rows, " images..."));
-        mp.osd_message("Creating mosaic...", 2);
-        var fileName = mp.get_property("filename");
-        var outputDir = getOutputDir();
-        var imgOutput_1 = paths.fixPath(mp.utils.join_path(outputDir, "".concat(createOutputName(fileName, options), ".").concat(options.format)));
-        createMosaic(screenshots, videoWidth, videoHeight, fileName, videoDuration, imgOutput_1, options, function (success, error) {
-            if (success) {
-                mp.msg.info("Mosaic created for ".concat(options.columns, "x").concat(options.rows, " images at ").concat(imgOutput_1, "..."));
-                sendOSD("Mosaic created!\n{\\b1}".concat(imgOutput_1, "{\\b0}"), 5);
-            }
-            else {
-                mp.msg.error("Failed to create mosaic for ".concat(options.columns, "x").concat(options.rows, " images..."));
-                mp.msg.error(error);
-                mp.osd_message("Failed to create mosaic for ".concat(options.columns, "x").concat(options.rows, " images..."), 5);
-            }
-            // Cleanup
-            mp.msg.info("Cleaning up...");
-            screenshots.forEach(function (sspath) {
-                paths.deleteFile(paths.fixPath(sspath));
+    // Take screenshot and put it in callback to createMosaic
+    screenshotCycles(startTime, timeStep, screenshotDir, options, function (success, error, screenshots) {
+        if (!success) {
+            mp.msg.error("Failed to create screenshots...");
+            mp.msg.error(error);
+            mp.osd_message("Failed to create screenshots...", 5);
+            return;
+        }
+        mp.set_property_number("time-pos", originalTimePos);
+        mp.set_property("pause", "no");
+        if (screenshots.length > 0) {
+            mp.msg.info("Creating mosaic for ".concat(options.columns, "x").concat(options.rows, " images..."));
+            mp.osd_message("Creating mosaic...", 2);
+            var fileName = mp.get_property("filename");
+            var outputDir = getOutputDir();
+            var imgOutput_1 = paths.fixPath(mp.utils.join_path(outputDir, "".concat(createOutputName(fileName, options), ".").concat(options.format)));
+            createMosaic(screenshots, videoWidth, videoHeight, fileName, videoDuration, imgOutput_1, options, function (success, error) {
+                if (success) {
+                    mp.msg.info("Mosaic created for ".concat(options.columns, "x").concat(options.rows, " images at ").concat(imgOutput_1, "..."));
+                    sendOSD("Mosaic created!\n{\\b1}".concat(imgOutput_1, "{\\b0}"), 5);
+                }
+                else {
+                    mp.msg.error("Failed to create mosaic for ".concat(options.columns, "x").concat(options.rows, " images..."));
+                    mp.msg.error(error);
+                    mp.osd_message("Failed to create mosaic for ".concat(options.columns, "x").concat(options.rows, " images..."), 5);
+                }
+                // Cleanup
+                mp.msg.info("Cleaning up...");
+                screenshots.forEach(function (sspath) {
+                    paths.deleteFile(paths.fixPath(sspath));
+                });
+                paths.deleteFile(paths.fixPath("".concat(imgOutput_1, ".montage.png")));
             });
-            paths.deleteFile(paths.fixPath("".concat(imgOutput_1, ".montage.png")));
-        });
-    }
+        }
+    });
 }
 mp.add_key_binding("Ctrl+Alt+s", "screenshot", function () {
     entrypoint(mosaicOptions);

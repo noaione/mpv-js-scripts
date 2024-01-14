@@ -84,6 +84,8 @@ interface SubprocessResult {
 
 type CallbackChain = (success: boolean, error: string | undefined) => void;
 
+type CallbackChainScreenshot = (success: boolean, error: string | undefined, screenshots: string[]) => void;
+
 /**
  * @class Pathing
  */
@@ -547,28 +549,41 @@ function createMosaic(
  * @param {number} timeStep - The time step in-between each screenshot. (in seconds)
  * @param {string} screenshotDir - The temporary folder to be used to save the screenshot.
  * @param {MosaicOptions} options - The options to use.
- * @returns {string[] | undefined} - The list of screenshots created, or undefined if an error occurred.
+ * @param {CallbackChainScreenshot} callback - The callback chain that will be called.
  */
-function screenshotCycles(startTime: number, timeStep: number, screenshotDir: string, options: MosaicOptions): string[] | undefined {
+function screenshotCycles(startTime: number, timeStep: number, screenshotDir: string, options: MosaicOptions, callback: CallbackChainScreenshot): void {
     const { rows, columns } = options;
 
     const screenshots: string[] = [];
     const totalImages = rows * columns;
 
-    for (let i = 1; i <= totalImages; i++) {
-        const tTarget = startTime + (timeStep * (i - 1));
-        mp.command_native(["seek", tTarget, "absolute", "exact"]);
-        // wait until seeking done
-        const imagePath = mp.utils.join_path(screenshotDir, `temp_screenshot-${i}.png`);
-        mp.command_native(["screenshot-to-file", imagePath, options.mode]) as string;
-        const errorMsg = mp.last_error();
-        if (errorMsg.length > 0) {
-            mp.osd_message("Error taking screenshot: " + errorMsg);
-            return undefined;
-        }
-        screenshots.push(imagePath);
+    // callback hell...
+    function callbackScreenshot(counter: number, screenshots: string[]) {
+        mp.command_native_async(["seek", (startTime + (timeStep * (counter - 1))), "absolute", "exact"], (success, _, error) => {
+            if (!success) {
+                callback(false, error, []);
+                return;
+            }
+
+            const imagePath = mp.utils.join_path(screenshotDir, `temp_screenshot-${counter}.png`);
+            mp.command_native_async(["screenshot-to-file", imagePath, options.mode], (success, _, error) => {
+                if (!success) {
+                    callback(false, error, screenshots);
+                }
+    
+                // if counter is equal to totalImages, we are done
+                if (counter >= totalImages) {
+                    callback(true, undefined, screenshots);
+                    return;
+                }
+
+                // if not, loop again.
+                callbackScreenshot(counter + 1, [...screenshots, imagePath]);
+            })
+        })
     }
-    return screenshots;
+
+    callbackScreenshot(1, screenshots);
 }
 
 /**
@@ -695,41 +710,51 @@ function entrypoint(options: MosaicOptions): void {
     const screenshotDir = paths.fixPath(mp.utils.join_path(homeDir, "screenshot-mosaic"));
     paths.createDirectory(screenshotDir);
     mp.set_property("pause", "yes");
-    const screenshots = screenshotCycles(startTime, timeStep, screenshotDir, options);
-    mp.set_property_number("time-pos", originalTimePos);
-    mp.set_property("pause", "no");
-    if (screenshots !== undefined) {
-        mp.msg.info(`Creating mosaic for ${options.columns}x${options.rows} images...`)
-        mp.osd_message("Creating mosaic...", 2);
-        const fileName = mp.get_property("filename") as string;
-        const outputDir = getOutputDir();
-        const imgOutput = paths.fixPath(mp.utils.join_path(outputDir, `${createOutputName(fileName, options)}.${options.format}`));
 
-        createMosaic(
-            screenshots,
-            videoWidth,
-            videoHeight,
-            fileName,
-            videoDuration,
-            imgOutput,
-            options,
-            (success, error) => {
-            if (success) {
-                mp.msg.info(`Mosaic created for ${options.columns}x${options.rows} images at ${imgOutput}...`);
-                sendOSD(`Mosaic created!\n{\\b1}${imgOutput}{\\b0}`, 5);
-            } else {
-                mp.msg.error(`Failed to create mosaic for ${options.columns}x${options.rows} images...`);
-                mp.msg.error(error);
-                mp.osd_message(`Failed to create mosaic for ${options.columns}x${options.rows} images...`, 5);
-            }
-            // Cleanup
-            mp.msg.info("Cleaning up...");
-            screenshots.forEach((sspath) => {
-                paths.deleteFile(paths.fixPath(sspath));
+    // Take screenshot and put it in callback to createMosaic
+    screenshotCycles(startTime, timeStep, screenshotDir, options, (success, error, screenshots) => {
+        if (!success) {
+            mp.msg.error("Failed to create screenshots...");
+            mp.msg.error(error);
+            mp.osd_message("Failed to create screenshots...", 5);
+            return;
+        }
+
+        mp.set_property_number("time-pos", originalTimePos);
+        mp.set_property("pause", "no");
+        if (screenshots.length > 0) {
+            mp.msg.info(`Creating mosaic for ${options.columns}x${options.rows} images...`)
+            mp.osd_message("Creating mosaic...", 2);
+            const fileName = mp.get_property("filename") as string;
+            const outputDir = getOutputDir();
+            const imgOutput = paths.fixPath(mp.utils.join_path(outputDir, `${createOutputName(fileName, options)}.${options.format}`));
+    
+            createMosaic(
+                screenshots,
+                videoWidth,
+                videoHeight,
+                fileName,
+                videoDuration,
+                imgOutput,
+                options,
+                (success, error) => {
+                if (success) {
+                    mp.msg.info(`Mosaic created for ${options.columns}x${options.rows} images at ${imgOutput}...`);
+                    sendOSD(`Mosaic created!\n{\\b1}${imgOutput}{\\b0}`, 5);
+                } else {
+                    mp.msg.error(`Failed to create mosaic for ${options.columns}x${options.rows} images...`);
+                    mp.msg.error(error);
+                    mp.osd_message(`Failed to create mosaic for ${options.columns}x${options.rows} images...`, 5);
+                }
+                // Cleanup
+                mp.msg.info("Cleaning up...");
+                screenshots.forEach((sspath) => {
+                    paths.deleteFile(paths.fixPath(sspath));
+                });
+                paths.deleteFile(paths.fixPath(`${imgOutput}.montage.png`));
             });
-            paths.deleteFile(paths.fixPath(`${imgOutput}.montage.png`));
-        });
-    }
+        }
+    })
 }
 
 mp.add_key_binding("Ctrl+Alt+s", "screenshot", () => {
