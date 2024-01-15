@@ -9,7 +9,7 @@
  *
  * Created by: noaione
  * License: MIT
- * Version: 2023.11.22.1
+ * Version: 2024.01.15.1
  */
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -477,6 +477,7 @@ function screenshotCycles(startTime, timeStep, screenshotDir, options, callback)
             mp.command_native_async(["screenshot-to-file", imagePath, options.mode], function (success, _, error) {
                 if (!success) {
                     callback(false, error, screenshots);
+                    return;
                 }
                 // if counter is equal to totalImages, we are done
                 if (counter >= totalImages) {
@@ -612,14 +613,14 @@ function entrypoint(options) {
     mp.set_property("pause", "yes");
     // Take screenshot and put it in callback to createMosaic
     screenshotCycles(startTime, timeStep, screenshotDir, options, function (success, error, screenshots) {
+        mp.set_property_number("time-pos", originalTimePos);
+        mp.set_property("pause", "no");
         if (!success) {
             mp.msg.error("Failed to create screenshots...");
             mp.msg.error(error);
             mp.osd_message("Failed to create screenshots...", 5);
             return;
         }
-        mp.set_property_number("time-pos", originalTimePos);
-        mp.set_property("pause", "no");
         if (screenshots.length > 0) {
             mp.msg.info("Creating mosaic for ".concat(options.columns, "x").concat(options.rows, " images..."));
             mp.osd_message("Creating mosaic...", 2);

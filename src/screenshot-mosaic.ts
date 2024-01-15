@@ -8,7 +8,7 @@
  * 
  * Created by: noaione
  * License: MIT
- * Version: 2023.11.22.1
+ * Version: 2024.01.15.1
  */
 
 const scriptName = mp.get_script_name();
@@ -569,6 +569,7 @@ function screenshotCycles(startTime: number, timeStep: number, screenshotDir: st
             mp.command_native_async(["screenshot-to-file", imagePath, options.mode], (success, _, error) => {
                 if (!success) {
                     callback(false, error, screenshots);
+                    return;
                 }
     
                 // if counter is equal to totalImages, we are done
