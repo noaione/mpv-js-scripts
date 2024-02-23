@@ -8,7 +8,7 @@
  * 
  * Created by: noaione
  * License: MIT
- * Version: 2024.01.15.1
+ * Version: 2024.02.23.1
  */
 
 const scriptName = mp.get_script_name();
