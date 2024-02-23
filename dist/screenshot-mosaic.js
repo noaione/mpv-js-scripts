@@ -481,7 +481,7 @@ function screenshotCycles(startTime, timeStep, screenshotDir, options, callback)
                 }
                 // if counter is equal to totalImages, we are done
                 if (counter >= totalImages) {
-                    callback(true, undefined, screenshots);
+                    callback(true, undefined, __spreadArray(__spreadArray([], screenshots, true), [imagePath], false));
                     return;
                 }
                 // if not, loop again.
