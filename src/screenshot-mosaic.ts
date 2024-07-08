@@ -8,7 +8,7 @@
  * 
  * Created by: noaione
  * License: MIT
- * Version: 2024.02.23.1
+ * Version: 2024.07.08.1
  */
 
 const scriptName = mp.get_script_name();
@@ -23,6 +23,8 @@ type MosaicOptions = {
     append_magick: "yes" | "no";
     resize: "yes" | "no";
     quality: number;
+    executable_path?: string;
+    font_family?: string;
 }
 
 type MinimalMosaicOptions = Omit<MosaicOptions, "append_magick">;
@@ -55,6 +57,12 @@ const mosaicOptions: MosaicOptions = {
     resize: "yes",
     // The quality of the final montage image.
     quality: 90,
+    // The path to the ImageMagick executable folders.
+    executable_path: "",
+    // The overriden family of the font to use.
+    // This is passed to magick convert -family option.
+    // If not set, it will use the default font.
+    font_family: "",
 }
 
 /**
@@ -85,6 +93,22 @@ interface SubprocessResult {
 type CallbackChain = (success: boolean, error: string | undefined) => void;
 
 type CallbackChainScreenshot = (success: boolean, error: string | undefined, screenshots: string[]) => void;
+
+/**
+ * Replace all instances of a substring in a string, using simple while loop.
+ * Since there is no String.replaceAll in mpv scripting, or RegEx replace.
+ *
+ * @param text String to be replaced
+ * @param search Substring to be searched
+ * @param replace Replacement string
+ * @returns Replaced string
+ */
+function replMut(text: string, search: string, replace: string) {
+    while (text.indexOf(search) !== -1) {
+        text = text.replace(search, replace);
+    }
+    return text;
+}
 
 /**
  * @class Pathing
@@ -175,7 +199,7 @@ class Pathing {
             mp.command_native({name: "subprocess", playback_only: false, args: ["mkdir", "-p", path]});
         } else {
             mp.msg.info("Creating directory (Windows): " + path);
-            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", `mkdir ${path}`]});
+            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", "mkdir", path]});
         }
     }
 
@@ -184,13 +208,18 @@ class Pathing {
         if (this.isUnix()) {
             mp.command_native({name: "subprocess", playback_only: false, args: ["rm", path]});
         } else {
-            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", `del /F /Q ${path}`]});
+            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", "del", "/F", "/Q", path]});
         }
     }
 
     joinPath(basePath: string, path: string) {
         if (this._pathSep === null) {
             this._detectOs();
+        }
+        // Check if ends with \\ or /
+        const lastIndex = basePath.length - 1;
+        if (basePath.indexOf('\\') === lastIndex || basePath.indexOf('/') === lastIndex) {
+            basePath = basePath.slice(0, -1);
         }
         return basePath + this._pathSep + path;
     }
@@ -255,6 +284,31 @@ function getOutputDir(): string {
     const homeDir = mp.command_native(["expand-path", "~~home/"]) as string;
     mp.msg.error(`Could not get screenshot directory, trying to use mpv home directory: ${homeDir}`);
     return paths.fixPath(homeDir);
+}
+
+/**
+ * Create magick prefix command.
+ * @param {string} [cmd] - The command to execute.
+ * @returns {string[]} - The prefixed command.
+ */
+function magick(cmd?: string): string[] {
+    const basePathing = [];
+    if (mosaicOptions.executable_path && mosaicOptions.executable_path.length > 0) {
+        const pathing = new Pathing();
+        if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+            basePathing.push(pathing.fixPath(mp.utils.join_path(mosaicOptions.executable_path, "magick")));
+            cmd && basePathing.push(cmd);
+        } else {
+            basePathing.push(pathing.fixPath(mp.utils.join_path(mosaicOptions.executable_path, cmd || "convert")));
+        }
+    } else {
+        if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+            basePathing.push("magick");
+        }
+        cmd && basePathing.push(cmd);
+    }
+
+    return basePathing;
 }
 
 /**
@@ -368,8 +422,7 @@ function runResize(imgOutput: string, videoHeight: number, options: MosaicOption
         resizeCmdsBase.push("magick");
     }
     const resizeCmds = [
-        ...resizeCmdsBase,
-        "convert",
+        ...magick("convert"),
         `${imgOutput}.montage.png`,
         "-resize",
         `x${videoHeight}`,
@@ -417,20 +470,24 @@ function runAnnotation(
     options: MosaicOptions,
     callback: CallbackChain
 ): void {
-    // annotate text
-    const annotateCmdsBase = [];
-    if (options.append_magick.toLowerCase() === "yes") {
-        annotateCmdsBase.push("magick");
+    // check font family
+    const fontFamilies = [];
+    if (options.font_family && options.font_family.trim().length > 0) {
+        fontFamilies.push("-family", options.font_family.trim());
     }
+
+    // annotate text
     const annotateCmds = [
-        ...annotateCmdsBase,
-        "convert",
+        ...magick("convert"),
 
         "-background",
         "white",
 
         "-pointsize",
         "40",
+
+        ...fontFamilies,
+
         "-gravity",
         "northwest",
         "label:mpv Media Player",
@@ -499,12 +556,8 @@ function createMosaic(
     options: MosaicOptions,
     callback: CallbackChain
 ): void {
-    const imageMagick = [];
-    if (options.append_magick.toLowerCase() === "yes") {
-        imageMagick.push("magick");
-    }
     const imageMagickArgs = [
-        "montage",
+        ...magick("montage"),
         "-geometry",
         `${videoWidth}x${videoHeight}+${options.padding}+${options.padding}`,
     ];
@@ -518,7 +571,7 @@ function createMosaic(
         {
             name: "subprocess",
             playback_only: false,
-            args: imageMagick.concat(imageMagickArgs),
+            args: imageMagickArgs,
             capture_stderr: true,
             capture_stdout: true,
         },
@@ -592,13 +645,12 @@ function screenshotCycles(startTime: number, timeStep: number, screenshotDir: st
  * @returns {boolean} - True if the montage command is available, false otherwise.
  */
 function checkMagick(): boolean {
-    const cmds = [];
-    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
-        cmds.push("magick")
-    }
-    cmds.push("montage");
-    cmds.push("--version");
-    const res = mp.command_native({name: "subprocess", playback_only: false, args: cmds}) as any;
+    const montageCmd = [
+        ...magick("montage"),
+        "--version",
+    ];
+    mp.msg.info("Checking ImageMagick availability...", JSON.stringify(montageCmd));
+    const res = mp.command_native({name: "subprocess", playback_only: false, args: montageCmd}) as any;
     return res.status === 0;
 }
 
@@ -690,6 +742,8 @@ function entrypoint(options: MosaicOptions): void {
         return;
     }
 
+    mp.msg.info(mp.module_paths);
+
     mp.msg.info("Running Mosaic Tools with the following options:");
     mp.msg.info("  Rows: " + options.rows);
     mp.msg.info("  Columns: " + options.columns);
@@ -698,6 +752,8 @@ function entrypoint(options: MosaicOptions): void {
     mp.msg.info("  Video Length: " + videoLength);
     mp.msg.info("  Video Width: " + videoWidth);
     mp.msg.info("  Video Height: " + videoHeight);
+    const outputDir = getOutputDir();
+    mp.msg.info("  Output Directory: " + outputDir);
     const videoDuration = formatDurationToHHMMSS(videoLength);
 
     // we want to start at 10% of the video length and end at 90%
@@ -728,7 +784,6 @@ function entrypoint(options: MosaicOptions): void {
             mp.msg.info(`Creating mosaic for ${options.columns}x${options.rows} images...`)
             mp.osd_message("Creating mosaic...", 2);
             const fileName = mp.get_property("filename") as string;
-            const outputDir = getOutputDir();
             const imgOutput = paths.fixPath(mp.utils.join_path(outputDir, `${createOutputName(fileName, options)}.${options.format}`));
     
             createMosaic(

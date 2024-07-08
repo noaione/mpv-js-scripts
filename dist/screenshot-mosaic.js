@@ -9,7 +9,7 @@
  *
  * Created by: noaione
  * License: MIT
- * Version: 2024.02.23.1
+ * Version: 2024.07.08.1
  */
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -61,7 +61,28 @@ var mosaicOptions = {
     resize: "yes",
     // The quality of the final montage image.
     quality: 90,
+    // The path to the ImageMagick executable folders.
+    executable_path: "",
+    // The overriden family of the font to use.
+    // This is passed to magick convert -family option.
+    // If not set, it will use the default font.
+    font_family: "",
 };
+/**
+ * Replace all instances of a substring in a string, using simple while loop.
+ * Since there is no String.replaceAll in mpv scripting, or RegEx replace.
+ *
+ * @param text String to be replaced
+ * @param search Substring to be searched
+ * @param replace Replacement string
+ * @returns Replaced string
+ */
+function replMut(text, search, replace) {
+    while (text.indexOf(search) !== -1) {
+        text = text.replace(search, replace);
+    }
+    return text;
+}
 /**
  * @class Pathing
  */
@@ -136,7 +157,7 @@ var Pathing = /** @class */ (function () {
         }
         else {
             mp.msg.info("Creating directory (Windows): " + path);
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "mkdir ".concat(path)] });
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "mkdir", path] });
         }
     };
     Pathing.prototype.deleteFile = function (path) {
@@ -145,12 +166,17 @@ var Pathing = /** @class */ (function () {
             mp.command_native({ name: "subprocess", playback_only: false, args: ["rm", path] });
         }
         else {
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "del /F /Q ".concat(path)] });
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "del", "/F", "/Q", path] });
         }
     };
     Pathing.prototype.joinPath = function (basePath, path) {
         if (this._pathSep === null) {
             this._detectOs();
+        }
+        // Check if ends with \\ or /
+        var lastIndex = basePath.length - 1;
+        if (basePath.indexOf('\\') === lastIndex || basePath.indexOf('/') === lastIndex) {
+            basePath = basePath.slice(0, -1);
         }
         return basePath + this._pathSep + path;
     };
@@ -210,6 +236,31 @@ function getOutputDir() {
     var homeDir = mp.command_native(["expand-path", "~~home/"]);
     mp.msg.error("Could not get screenshot directory, trying to use mpv home directory: ".concat(homeDir));
     return paths.fixPath(homeDir);
+}
+/**
+ * Create magick prefix command.
+ * @param {string} [cmd] - The command to execute.
+ * @returns {string[]} - The prefixed command.
+ */
+function magick(cmd) {
+    var basePathing = [];
+    if (mosaicOptions.executable_path && mosaicOptions.executable_path.length > 0) {
+        var pathing = new Pathing();
+        if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+            basePathing.push(pathing.fixPath(mp.utils.join_path(mosaicOptions.executable_path, "magick")));
+            cmd && basePathing.push(cmd);
+        }
+        else {
+            basePathing.push(pathing.fixPath(mp.utils.join_path(mosaicOptions.executable_path, cmd || "convert")));
+        }
+    }
+    else {
+        if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+            basePathing.push("magick");
+        }
+        cmd && basePathing.push(cmd);
+    }
+    return basePathing;
 }
 /**
  * Explicitly check if the execution of magick command was successful.
@@ -315,8 +366,7 @@ function runResize(imgOutput, videoHeight, options, callback) {
     if (options.append_magick.toLowerCase() === "yes") {
         resizeCmdsBase.push("magick");
     }
-    var resizeCmds = __spreadArray(__spreadArray([], resizeCmdsBase, true), [
-        "convert",
+    var resizeCmds = __spreadArray(__spreadArray([], magick("convert"), true), [
         "".concat(imgOutput, ".montage.png"),
         "-resize",
         "x".concat(videoHeight),
@@ -352,17 +402,18 @@ function runResize(imgOutput, videoHeight, options, callback) {
  * @returns {void} - Nothing
  */
 function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, options, callback) {
-    // annotate text
-    var annotateCmdsBase = [];
-    if (options.append_magick.toLowerCase() === "yes") {
-        annotateCmdsBase.push("magick");
+    // check font family
+    var fontFamilies = [];
+    if (options.font_family && options.font_family.trim().length > 0) {
+        fontFamilies.push("-family", options.font_family.trim());
     }
-    var annotateCmds = __spreadArray(__spreadArray([], annotateCmdsBase, true), [
-        "convert",
+    // annotate text
+    var annotateCmds = __spreadArray(__spreadArray(__spreadArray(__spreadArray([], magick("convert"), true), [
         "-background",
         "white",
         "-pointsize",
-        "40",
+        "40"
+    ], false), fontFamilies, true), [
         "-gravity",
         "northwest",
         "label:mpv Media Player",
@@ -413,15 +464,10 @@ function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, o
  * @returns {void} - Nothing
  */
 function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, outputFile, options, callback) {
-    var imageMagick = [];
-    if (options.append_magick.toLowerCase() === "yes") {
-        imageMagick.push("magick");
-    }
-    var imageMagickArgs = [
-        "montage",
+    var imageMagickArgs = __spreadArray(__spreadArray([], magick("montage"), true), [
         "-geometry",
         "".concat(videoWidth, "x").concat(videoHeight, "+").concat(options.padding, "+").concat(options.padding),
-    ];
+    ], false);
     for (var i = 0; i < screenshots.length; i++) {
         imageMagickArgs.push(screenshots[i]);
     }
@@ -431,7 +477,7 @@ function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, 
     mp.command_native_async({
         name: "subprocess",
         playback_only: false,
-        args: imageMagick.concat(imageMagickArgs),
+        args: imageMagickArgs,
         capture_stderr: true,
         capture_stdout: true,
     }, function (_, result, __) {
@@ -496,13 +542,11 @@ function screenshotCycles(startTime, timeStep, screenshotDir, options, callback)
  * @returns {boolean} - True if the montage command is available, false otherwise.
  */
 function checkMagick() {
-    var cmds = [];
-    if (mosaicOptions.append_magick.toLowerCase() === "yes") {
-        cmds.push("magick");
-    }
-    cmds.push("montage");
-    cmds.push("--version");
-    var res = mp.command_native({ name: "subprocess", playback_only: false, args: cmds });
+    var montageCmd = __spreadArray(__spreadArray([], magick("montage"), true), [
+        "--version",
+    ], false);
+    mp.msg.info("Checking ImageMagick availability...", JSON.stringify(montageCmd));
+    var res = mp.command_native({ name: "subprocess", playback_only: false, args: montageCmd });
     return res.status === 0;
 }
 /**
@@ -591,6 +635,7 @@ function entrypoint(options) {
         mp.osd_message("Failed to get time position");
         return;
     }
+    mp.msg.info(mp.module_paths);
     mp.msg.info("Running Mosaic Tools with the following options:");
     mp.msg.info("  Rows: " + options.rows);
     mp.msg.info("  Columns: " + options.columns);
@@ -599,6 +644,8 @@ function entrypoint(options) {
     mp.msg.info("  Video Length: " + videoLength);
     mp.msg.info("  Video Width: " + videoWidth);
     mp.msg.info("  Video Height: " + videoHeight);
+    var outputDir = getOutputDir();
+    mp.msg.info("  Output Directory: " + outputDir);
     var videoDuration = formatDurationToHHMMSS(videoLength);
     // we want to start at 10% of the video length and end at 90%
     var startTime = videoLength * 0.1;
@@ -625,7 +672,6 @@ function entrypoint(options) {
             mp.msg.info("Creating mosaic for ".concat(options.columns, "x").concat(options.rows, " images..."));
             mp.osd_message("Creating mosaic...", 2);
             var fileName = mp.get_property("filename");
-            var outputDir = getOutputDir();
             var imgOutput_1 = paths.fixPath(mp.utils.join_path(outputDir, "".concat(createOutputName(fileName, options), ".").concat(options.format)));
             createMosaic(screenshots, videoWidth, videoHeight, fileName, videoDuration, imgOutput_1, options, function (success, error) {
                 if (success) {

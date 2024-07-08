@@ -6,7 +6,7 @@ To download, open the [dist](dist) folder and just put the `.js` file into your 
 
 ### [`screenshot-mosaic`](dist/screenshot-mosaic.js)
 
-**You need ImageMagick installed on your system** (especially the `montage` command need to be available)
+**You need at minimum ImageMagick 7.1.0-48+ or 6.9.12-63+ installed on your system** (especially the `montage` command need to be available)
 
 Create a mosaic of an images like what MPC-HC does.
 
@@ -46,7 +46,48 @@ append_magick=no
 resize=yes
 # The quality of the final montage image.
 quality=90
+# Imagemagick folder path, leave empty to use $PATH default
+executable_path=
+# The fallback font family to be used in imagemagick.
+font_family=
 ```
+
+#### Font Problem
+
+If your file contains any CJK characters, the character will not be included in the actual text.
+
+To fix this, you would need:
+1. ImageMagick 7.1.0-48+ or 6.9.12-63+ (this has fix on CSS-style selector)
+2. [Noto Sans CJK OTCs](https://github.com/notofonts/noto-cjk/tree/main/Sans#downloading-noto-sans-cjk) or any other font that includes a wide-range of CJK glyphs.
+
+Then, start:
+1. Download any font that has a wide-range of support, or any font you want.
+2. Run `magick convert -list font | grep "Your Font Name"` to get your font list
+
+An example output would be like this:
+```
+$ magick convert -list font
+Path: Windows Fonts
+  Font: Noto-Sans-CJK-JP-&-Noto-Sans-CJK-KR-&-Noto-Sans-CJK-SC-&-Noto-Sans-CJK-TC-&-Noto-Sans-CJK-HK-&-Noto-Sans-Mono-CJK-JP-&-Noto-Sans-Mono-CJK-KR-&-Noto-Sans-Mono-CJK-SC-&-Noto-Sans-Mono-CJK-TC-&-Noto-Sans-Mono-CJK-HK
+    family: Noto Sans CJK JP & Noto Sans CJK KR & Noto Sans CJK SC & Noto Sans CJK TC & Noto Sans CJK HK & Noto Sans Mono CJK JP & Noto Sans Mono CJK KR & Noto Sans Mono CJK SC & Noto Sans Mono CJK TC & Noto Sans Mono CJK HK
+    style: Normal
+    stretch: Normal
+    weight: 400
+    glyphs: c:\windows\fonts\notosanscjk-regular.ttc
+    index: 0
+  Font: Noto-Sans-CJK-JP-Black-&-Noto-Sans-CJK-KR-Black-&-Noto-Sans-CJK-SC-Black-&-Noto-Sans-CJK-TC-Black-&-Noto-Sans-CJK-HK-Black
+    family: Noto Sans CJK JP Black & Noto Sans CJK KR Black & Noto Sans CJK SC Black & Noto Sans CJK TC Black & Noto Sans CJK HK
+    style: Normal
+    stretch: Normal
+    weight: 900
+    glyphs: c:\windows\fonts\notosanscjk-black.ttc
+    index: 0
+```
+
+Save the `family` part of your prefered fonts.
+
+3. Change `font_family` in your `screenshot-mosaic.conf` into your installed family font
+4. Try it.
 
 #### UOSC Support
 
