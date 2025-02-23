@@ -9,7 +9,7 @@
  *
  * Created by: noaione
  * License: MIT
- * Version: 2024.07.08.1
+ * Version: 2025.02.23.1
  */
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -34,40 +34,106 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
 var scriptName = mp.get_script_name();
 var uoscMenuName = "".concat(scriptName, "_uosc_menu");
 var mosaicOptions = {
-    // Number of rows for screenshot
-    rows: 3,
-    // Number of columns for screenshot
-    columns: 4,
-    // Padding between screenshots (pixels)
-    padding: 10,
-    // Output format
     /**
+     * Number of rows for screenshot
+     *
+     * @type {number}
+     */
+    rows: 3,
+    /**
+     * Number of columns for screenshot
+     *
+     * @type {number}
+     */
+    columns: 4,
+    /**
+     * Padding between screenshots
+     *
+     * @type {number}
+     */
+    padding: 10,
+    /**
+     * Output format
+     *
      * @type {"png" | "jpg" | "webp"}
      */
     format: "png",
-    // Screenshot mode
     /**
+     * Override the screenshot format
+     *
+     * If empty, will use your default screenshot format via `screenshot-format` (or fallback to `jpg` if not set)
+     *
+     * @type {"png" | "jpg" | "jpeg" | "webp" | "jxl" | "avif" | ""}
+     */
+    screenshot_format: "",
+    /**
+     * Screenshot mode, default to video
+     *
+     * @see https://mpv.io/manual/stable/#command-interface-screenshot-%3Cflags%3E
      * @type {"video" | "subtitles" | "window"}
      */
     mode: "video",
-    // Append the "magick" command to the command line.
-    // Sometimes on windows, you cannot really use any magick command without prefixing
-    // "magick", if the command failed, you can set this to `yes` in your config.
+    /**
+     * Append the "magick" command to the command line.
+     *
+     * Sometimes on windows, you cannot really use any magick command without prefixing
+     * "magick", if the command failed, you can set this to `yes` in your config.
+     */
     append_magick: "no",
-    // Resize the final montage into the video height.
-    // I recommend keeping this enabled since if you have a 4k video, you don't want to
-    // have a montage that is basically 4k * whatever the number of screenshots you have.
-    // It would be way too big, so this will resize it back to the video height.
+    /**
+     * Resize the final montage into the video height.
+     *
+     * I recommend keeping this enabled since if you have a 4k video, you don't want to
+     * have a montage that is basically 4k * whatever the number of screenshots you have.
+     * It would be way too big, so this will resize it back to the video height.
+     */
     resize: "yes",
-    // The quality of the final montage image.
+    /**
+     * The quality of the final montage image.
+     *
+     * @type {number}
+     */
     quality: 90,
-    // The path to the ImageMagick executable folders.
+    /**
+     * The path to the ImageMagick executable folders.
+     *
+     * @type {string}
+     */
     executable_path: "",
-    // The overriden family of the font to use.
-    // This is passed to magick convert -family option.
-    // If not set, it will use the default font.
+    /**
+     * The overriden family of the font to use.
+     *
+     * This is passed to magick convert -family option.
+     * If not set, it will use the default font.
+     *
+     * @type {string}
+     */
     font_family: "",
+    /**
+     * Delay between each screenshot
+     *
+     * Useful if you use png screenshot mode and you keep getting duplicates.
+     * In miliseconds
+     *
+     * @type {number}
+     */
+    screenshot_delay: 0,
 };
+/**
+ * A list of supported image formats.
+ *
+ * Ref: https://mpv.io/manual/stable/#options-screenshot-format
+ *
+ * @type {string[]}
+ */
+var supportedFormat = [
+    "png",
+    "jpg",
+    "jpeg",
+    "webp",
+    "avif",
+    "jxl",
+];
 /**
  * Replace all instances of a substring in a string, using simple while loop.
  * Since there is no String.replaceAll in mpv scripting, or RegEx replace.
@@ -508,7 +574,7 @@ function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, 
  * @param {MosaicOptions} options - The options to use.
  * @param {CallbackChainScreenshot} callback - The callback chain that will be called.
  */
-function screenshotCycles(startTime, timeStep, screenshotDir, options, callback) {
+function screenshotCycles(startTime, timeStep, screenshotDir, ssFormat, options, callback) {
     var rows = options.rows, columns = options.columns;
     var screenshots = [];
     var totalImages = rows * columns;
@@ -519,23 +585,52 @@ function screenshotCycles(startTime, timeStep, screenshotDir, options, callback)
                 callback(false, error, []);
                 return;
             }
-            var imagePath = mp.utils.join_path(screenshotDir, "temp_screenshot-".concat(counter, ".png"));
-            mp.command_native_async(["screenshot-to-file", imagePath, options.mode], function (success, _, error) {
-                if (!success) {
-                    callback(false, error, screenshots);
-                    return;
-                }
-                // if counter is equal to totalImages, we are done
-                if (counter >= totalImages) {
-                    callback(true, undefined, __spreadArray(__spreadArray([], screenshots, true), [imagePath], false));
-                    return;
-                }
-                // if not, loop again.
-                callbackScreenshot(counter + 1, __spreadArray(__spreadArray([], screenshots, true), [imagePath], false));
-            });
+            var imagePath = mp.utils.join_path(screenshotDir, "temp_screenshot-".concat(counter, ".").concat(ssFormat));
+            if (options.screenshot_delay > 0) {
+                mp.msg.debug("Delaying screenshot ".concat(counter, " by ").concat(options.screenshot_delay, "ms"));
+                setTimeout(function () {
+                    mp.command_native_async(["screenshot-to-file", imagePath, options.mode], function (success, _, error) {
+                        if (!success) {
+                            callback(false, error, screenshots);
+                            return;
+                        }
+                        // if counter is equal to totalImages, we are done
+                        if (counter >= totalImages) {
+                            callback(true, undefined, __spreadArray(__spreadArray([], screenshots, true), [imagePath], false));
+                            return;
+                        }
+                        // if not, loop again.
+                        setTimeout(function () {
+                            callbackScreenshot(counter + 1, __spreadArray(__spreadArray([], screenshots, true), [imagePath], false));
+                        }, options.screenshot_delay);
+                    });
+                }, options.screenshot_delay);
+            }
+            else {
+                mp.command_native_async(["screenshot-to-file", imagePath, options.mode], function (success, _, error) {
+                    if (!success) {
+                        callback(false, error, screenshots);
+                        return;
+                    }
+                    // if counter is equal to totalImages, we are done
+                    if (counter >= totalImages) {
+                        callback(true, undefined, __spreadArray(__spreadArray([], screenshots, true), [imagePath], false));
+                        return;
+                    }
+                    // if not, loop again.
+                    callbackScreenshot(counter + 1, __spreadArray(__spreadArray([], screenshots, true), [imagePath], false));
+                });
+            }
         });
     }
-    callbackScreenshot(1, screenshots);
+    if (options.screenshot_delay > 0) {
+        setTimeout(function () {
+            callbackScreenshot(1, screenshots);
+        }, options.screenshot_delay);
+    }
+    else {
+        callbackScreenshot(1, screenshots);
+    }
 }
 /**
  * Check if the montage command is available. (also check Magick)
@@ -573,6 +668,22 @@ function verifyVariables(options) {
         return false;
     }
     return true;
+}
+function getScreenshotFormat(options) {
+    var ssFormat = mp.get_property("screenshot-format");
+    var fallbackFormat = ssFormat ? ssFormat : "jpg";
+    if (supportedFormat.indexOf(fallbackFormat) === -1) {
+        fallbackFormat = "jpg";
+    }
+    if (options.screenshot_format) {
+        if (supportedFormat.indexOf(options.screenshot_format) !== -1) {
+            mp.msg.info("Using preferred screenshot format ".concat(options.screenshot_format));
+            return options.screenshot_format;
+        }
+        mp.msg.warn("Screenshot format ".concat(options.screenshot_format, " is not supported, using ").concat(supportedFormat, " instead"));
+    }
+    mp.msg.info("Using screenshot format ".concat(fallbackFormat));
+    return fallbackFormat;
 }
 /**
  * Send a formatted OSD message that support ASS tags.
@@ -647,6 +758,7 @@ function entrypoint(options) {
     var outputDir = getOutputDir();
     mp.msg.info("  Output Directory: " + outputDir);
     var videoDuration = formatDurationToHHMMSS(videoLength);
+    var ssFormat = getScreenshotFormat(options);
     // we want to start at 10% of the video length and end at 90%
     var startTime = videoLength * 0.1;
     var endTime = videoLength * 0.9;
@@ -659,7 +771,7 @@ function entrypoint(options) {
     paths.createDirectory(screenshotDir);
     mp.set_property("pause", "yes");
     // Take screenshot and put it in callback to createMosaic
-    screenshotCycles(startTime, timeStep, screenshotDir, options, function (success, error, screenshots) {
+    screenshotCycles(startTime, timeStep, screenshotDir, ssFormat, options, function (success, error, screenshots) {
         mp.set_property_number("time-pos", originalTimePos);
         mp.set_property("pause", "no");
         if (!success) {

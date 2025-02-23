@@ -10,7 +10,7 @@ To download, open the [dist](dist) folder and just put the `.js` file into your 
 
 Create a mosaic of an images like what MPC-HC does.
 
-![Sample](https://p.ihateani.me/qklxfhvu.jpg)
+![Sample](https://p.ihateani.me/adkjnpzu.jpg)
 
 To run, just press `ctrl+alt+s`, it will create a `$fileName.mosaic$colx$row.png` file in either your screenshot folder or the mpv home directory. (`~/.mpv` or `%APPDATA%/mpv`)
 
@@ -50,6 +50,17 @@ quality=90
 executable_path=
 # The fallback font family to be used in imagemagick.
 font_family=
+# Screenshot format
+# ---
+# Either `png`, `jpg`, `jpeg`, `webp`, `jxl`, `avif`
+# If left empty, will use your default screenshot format (from `screenshot-format`) or fallback to mpv default which is `jpg`
+screenshot_format=
+# Screenshot delay (in miliseconds)
+# ---
+# Called on each seek and screenshot to ensure the video frame is actually at the right time.
+# This is a simple workaround to https://github.com/noaione/mpv-js-scripts/issues/16
+# Default to zero (no delay)
+screenshot_delay=0
 ```
 
 #### Font Problem
