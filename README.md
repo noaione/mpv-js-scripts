@@ -10,7 +10,7 @@ To download, open the [dist](dist) folder and just put the `.js` file into your 
 
 Create a mosaic of an images like what MPC-HC does.
 
-![Sample](https://p.ihateani.me/adkjnpzu.jpg)
+![Sample](https://p.ihateani.me/oljnisnr.png)
 
 To run, just press `ctrl+alt+s`, it will create a `$fileName.mosaic$colx$row.png` file in either your screenshot folder or the mpv home directory. (`~/.mpv` or `%APPDATA%/mpv`)
 
@@ -61,6 +61,19 @@ screenshot_format=
 # This is a simple workaround to https://github.com/noaione/mpv-js-scripts/issues/16
 # Default to zero (no delay)
 screenshot_delay=0
+# Jitter factor for the screenshots.
+# This will add/subtract seconds from the actual time step timing to give some randomness.
+#
+# Default to zero, set to zero to disable
+jitter=0
+# The minimum start frame, we don't take frame zero for reference
+#
+# This will be multiplied to the video length, so the first frame is 10% from the starting frame as an example
+minimum=0.1
+# The minimum start frame, we don't take frame zero for reference
+#
+# This will be multiplied to the video length, so the final frame is 90% from the starting frame as an example
+maximum=0.9
 ```
 
 #### Font Problem

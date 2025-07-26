@@ -9,7 +9,7 @@
  *
  * Created by: noaione
  * License: MIT
- * Version: 2025.02.23.1
+ * Version: 2025.07.26.1
  */
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -118,6 +118,33 @@ var mosaicOptions = {
      * @type {number}
      */
     screenshot_delay: 0,
+    /**
+     * Jitter factor for the screenshots.
+     *
+     * This is in seconds, and will be added to the time step between each screenshot
+     * to create a more random effect in-between screenshots.
+     *
+     * Default to 0, which means no jitter.
+     *
+     * @type {number}
+     */
+    jitter: 0,
+    /**
+     * The start frame for the mosaic, multiplied to the video length.
+     *
+     * Default to 0.1
+     *
+     * @type {number}
+     */
+    minimum: 0.1,
+    /**
+     * The end frame for the mosaic, multiplied to the video length.
+     *
+     * Default to 0.9
+     *
+     * @type {number}
+     */
+    maximum: 0.9,
 };
 /**
  * A list of supported image formats.
@@ -574,13 +601,22 @@ function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, 
  * @param {MosaicOptions} options - The options to use.
  * @param {CallbackChainScreenshot} callback - The callback chain that will be called.
  */
-function screenshotCycles(startTime, timeStep, screenshotDir, ssFormat, options, callback) {
+function screenshotCycles(startTime, timeStep, maximumTime, screenshotDir, ssFormat, options, callback) {
     var rows = options.rows, columns = options.columns;
     var screenshots = [];
     var totalImages = rows * columns;
+    function calculateSeekTime(counter) {
+        var seekCalculation = (startTime + (timeStep * (counter - 1)));
+        if (options.jitter && options.jitter > 0) {
+            var jitter = Math.round(Math.random() * options.jitter);
+            var direction = Math.random() < 0.5 ? -1 : 1; // Randomly choose to add or subtract jitter
+            return Math.max(Math.min(seekCalculation + (direction * jitter), maximumTime), 0); // Ensure the time is within bounds
+        }
+        return seekCalculation;
+    }
     // callback hell...
     function callbackScreenshot(counter, screenshots) {
-        mp.command_native_async(["seek", (startTime + (timeStep * (counter - 1))), "absolute", "exact"], function (success, _, error) {
+        mp.command_native_async(["seek", calculateSeekTime(counter), "absolute", "exact"], function (success, _, error) {
             if (!success) {
                 callback(false, error, []);
                 return;
@@ -709,6 +745,7 @@ function sendOSD(message, duration) {
  * @returns {void} - Nothing
  */
 function entrypoint(options) {
+    var _a, _b;
     // create a mosaic of screenshots
     var paths = new Pathing();
     if (!verifyVariables(options)) {
@@ -759,9 +796,11 @@ function entrypoint(options) {
     mp.msg.info("  Output Directory: " + outputDir);
     var videoDuration = formatDurationToHHMMSS(videoLength);
     var ssFormat = getScreenshotFormat(options);
+    var minFrame = (_a = options.minimum) !== null && _a !== void 0 ? _a : 0.1;
+    var maxFrame = (_b = options.maximum) !== null && _b !== void 0 ? _b : 0.9;
     // we want to start at 10% of the video length and end at 90%
-    var startTime = videoLength * 0.1;
-    var endTime = videoLength * 0.9;
+    var startTime = videoLength * minFrame;
+    var endTime = videoLength * maxFrame;
     var timeStep = (endTime - startTime) / (imageCount - 1);
     mp.osd_message("Creating ".concat(options.columns, "x").concat(options.rows, " mosaic of ").concat(imageCount, " screenshots..."), 2);
     mp.msg.info("Creating ".concat(options.columns, "x").concat(options.rows, " mosaic of ").concat(imageCount, " screenshots..."));
@@ -771,7 +810,7 @@ function entrypoint(options) {
     paths.createDirectory(screenshotDir);
     mp.set_property("pause", "yes");
     // Take screenshot and put it in callback to createMosaic
-    screenshotCycles(startTime, timeStep, screenshotDir, ssFormat, options, function (success, error, screenshots) {
+    screenshotCycles(startTime, timeStep, videoLength, screenshotDir, ssFormat, options, function (success, error, screenshots) {
         mp.set_property_number("time-pos", originalTimePos);
         mp.set_property("pause", "no");
         if (!success) {

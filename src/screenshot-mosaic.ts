@@ -8,7 +8,7 @@
  * 
  * Created by: noaione
  * License: MIT
- * Version: 2025.02.23.1
+ * Version: 2025.07.26.1
  */
 
 const scriptName = mp.get_script_name();
@@ -27,6 +27,9 @@ type MosaicOptions = {
     executable_path?: string;
     font_family?: string;
     screenshot_delay: number;
+    jitter?: number;
+    minimum?: number; // The start frame for the mosaic, multiplied to the video length.
+    maximum?: number; // The end frame for the mosaic, multiplied to the video length.
 }
 
 type MinimalMosaicOptions = Omit<MosaicOptions, "append_magick" | "font_family" | "executable_path" | "screenshot_delay" | "screenshot_format">;
@@ -116,6 +119,33 @@ const mosaicOptions: MosaicOptions = {
      * @type {number}
      */
     screenshot_delay: 0,
+    /**
+     * Jitter factor for the screenshots.
+     *
+     * This is in seconds, and will be added to the time step between each screenshot
+     * to create a more random effect in-between screenshots.
+     *
+     * Default to 0, which means no jitter.
+     *
+     * @type {number}
+     */
+    jitter: 0,
+    /**
+     * The start frame for the mosaic, multiplied to the video length.
+     *
+     * Default to 0.1
+     *
+     * @type {number}
+     */
+    minimum: 0.1,
+    /**
+     * The end frame for the mosaic, multiplied to the video length.
+     *
+     * Default to 0.9
+     *
+     * @type {number}
+     */
+    maximum: 0.9,
 }
 
 /**
@@ -675,6 +705,7 @@ function createMosaic(
 function screenshotCycles(
     startTime: number,
     timeStep: number,
+    maximumTime: number,
     screenshotDir: string,
     ssFormat: MosaicOptions['screenshot_format'],
     options: MosaicOptions,
@@ -685,9 +716,19 @@ function screenshotCycles(
     const screenshots: string[] = [];
     const totalImages = rows * columns;
 
+    function calculateSeekTime(counter: number): number {
+        const seekCalculation = (startTime + (timeStep * (counter - 1)));
+        if (options.jitter && options.jitter > 0) {
+            const jitter = Math.round(Math.random() * options.jitter);
+            const direction = Math.random() < 0.5 ? -1 : 1; // Randomly choose to add or subtract jitter
+            return Math.max(Math.min(seekCalculation + (direction * jitter), maximumTime), 0); // Ensure the time is within bounds
+        }
+        return seekCalculation;
+    }
+
     // callback hell...
     function callbackScreenshot(counter: number, screenshots: string[]) {
-        mp.command_native_async(["seek", (startTime + (timeStep * (counter - 1))), "absolute", "exact"], (success, _, error) => {
+        mp.command_native_async(["seek", calculateSeekTime(counter), "absolute", "exact"], (success, _, error) => {
             if (!success) {
                 callback(false, error, []);
                 return;
@@ -883,9 +924,12 @@ function entrypoint(options: MosaicOptions): void {
 
     const ssFormat = getScreenshotFormat(options);
 
+    const minFrame = options.minimum ?? 0.1;
+    const maxFrame = options.maximum ?? 0.9;
+
     // we want to start at 10% of the video length and end at 90%
-    const startTime = videoLength * 0.1;
-    const endTime = videoLength * 0.9;
+    const startTime = videoLength * minFrame;
+    const endTime = videoLength * maxFrame;
     const timeStep = (endTime - startTime) / (imageCount - 1);
     mp.osd_message(`Creating ${options.columns}x${options.rows} mosaic of ${imageCount} screenshots...`, 2);
     mp.msg.info(`Creating ${options.columns}x${options.rows} mosaic of ${imageCount} screenshots...`);
@@ -896,7 +940,7 @@ function entrypoint(options: MosaicOptions): void {
     mp.set_property("pause", "yes");
 
     // Take screenshot and put it in callback to createMosaic
-    screenshotCycles(startTime, timeStep, screenshotDir, ssFormat, options, (success, error, screenshots) => {
+    screenshotCycles(startTime, timeStep, videoLength, screenshotDir, ssFormat, options, (success, error, screenshots) => {
         mp.set_property_number("time-pos", originalTimePos);
         mp.set_property("pause", "no");
 
