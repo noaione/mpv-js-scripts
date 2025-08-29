@@ -9,7 +9,7 @@
  *
  * Created by: noaione
  * License: MIT
- * Version: 2025.07.26.1
+ * Version: 2025.08.30.1
  */
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -339,7 +339,7 @@ function magick(cmd) {
     var basePathing = [];
     if (mosaicOptions.executable_path && mosaicOptions.executable_path.length > 0) {
         var pathing = new Pathing();
-        if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        if (mosaicOptions.append_magick.toLowerCase() === "yes" && cmd && cmd.toLowerCase() !== "magick") {
             basePathing.push(pathing.fixPath(mp.utils.join_path(mosaicOptions.executable_path, "magick")));
             cmd && basePathing.push(cmd);
         }
@@ -348,7 +348,7 @@ function magick(cmd) {
         }
     }
     else {
-        if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        if (mosaicOptions.append_magick.toLowerCase() === "yes" && cmd && cmd.toLowerCase() !== "magick") {
             basePathing.push("magick");
         }
         cmd && basePathing.push(cmd);
@@ -455,11 +455,7 @@ function createOutputName(fileName, options) {
  * @returns {void} - Nothing
  */
 function runResize(imgOutput, videoHeight, options, callback) {
-    var resizeCmdsBase = [];
-    if (options.append_magick.toLowerCase() === "yes") {
-        resizeCmdsBase.push("magick");
-    }
-    var resizeCmds = __spreadArray(__spreadArray([], magick("convert"), true), [
+    var resizeCmds = __spreadArray(__spreadArray([], magick("magick"), true), [
         "".concat(imgOutput, ".montage.png"),
         "-resize",
         "x".concat(videoHeight),
@@ -501,7 +497,7 @@ function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, o
         fontFamilies.push("-family", options.font_family.trim());
     }
     // annotate text
-    var annotateCmds = __spreadArray(__spreadArray(__spreadArray(__spreadArray([], magick("convert"), true), [
+    var annotateCmds = __spreadArray(__spreadArray(__spreadArray(__spreadArray([], magick("magick"), true), [
         "-background",
         "white",
         "-pointsize",

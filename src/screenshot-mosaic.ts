@@ -8,7 +8,7 @@
  * 
  * Created by: noaione
  * License: MIT
- * Version: 2025.07.26.1
+ * Version: 2025.08.30.1
  */
 
 const scriptName = mp.get_script_name();
@@ -394,14 +394,14 @@ function magick(cmd?: string): string[] {
     const basePathing = [];
     if (mosaicOptions.executable_path && mosaicOptions.executable_path.length > 0) {
         const pathing = new Pathing();
-        if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        if (mosaicOptions.append_magick.toLowerCase() === "yes" && cmd && cmd.toLowerCase() !== "magick") {
             basePathing.push(pathing.fixPath(mp.utils.join_path(mosaicOptions.executable_path, "magick")));
             cmd && basePathing.push(cmd);
         } else {
             basePathing.push(pathing.fixPath(mp.utils.join_path(mosaicOptions.executable_path, cmd || "convert")));
         }
     } else {
-        if (mosaicOptions.append_magick.toLowerCase() === "yes") {
+        if (mosaicOptions.append_magick.toLowerCase() === "yes" && cmd && cmd.toLowerCase() !== "magick") {
             basePathing.push("magick");
         }
         cmd && basePathing.push(cmd);
@@ -516,12 +516,8 @@ function createOutputName(fileName: string, options: MinimalMosaicOptions): stri
  * @returns {void} - Nothing
  */
 function runResize(imgOutput: string, videoHeight: number, options: MosaicOptions, callback: CallbackChain): void {
-    const resizeCmdsBase = [];
-    if (options.append_magick.toLowerCase() === "yes") {
-        resizeCmdsBase.push("magick");
-    }
     const resizeCmds = [
-        ...magick("convert"),
+        ...magick("magick"),
         `${imgOutput}.montage.png`,
         "-resize",
         `x${videoHeight}`,
@@ -577,7 +573,7 @@ function runAnnotation(
 
     // annotate text
     const annotateCmds = [
-        ...magick("convert"),
+        ...magick("magick"),
 
         "-background",
         "white",
