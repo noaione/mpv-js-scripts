@@ -554,6 +554,8 @@ function runAnnotation(fileName, videoWidth, videoHeight, duration, imgOutput, o
  */
 function createMosaic(screenshots, videoWidth, videoHeight, fileName, duration, outputFile, options, callback) {
     var imageMagickArgs = __spreadArray(__spreadArray([], magick("montage"), true), [
+        "-tile",
+        "".concat(options.columns, "x").concat(options.rows),
         "-geometry",
         "".concat(videoWidth, "x").concat(videoHeight, "+").concat(options.padding, "+").concat(options.padding),
     ], false);

@@ -653,6 +653,8 @@ function createMosaic(
 ): void {
     const imageMagickArgs = [
         ...magick("montage"),
+        "-tile",
+        `${options.columns}x${options.rows}`,
         "-geometry",
         `${videoWidth}x${videoHeight}+${options.padding}+${options.padding}`,
     ];
