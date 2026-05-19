@@ -8,7 +8,7 @@
  * 
  * Created by: noaione
  * License: MIT
- * Version: 2025.08.30.1
+ * Version: 2026.05.20.1
  */
 
 const scriptName = mp.get_script_name();
@@ -26,7 +26,6 @@ type MosaicOptions = {
     quality: number;
     executable_path?: string;
     font_family?: string;
-    screenshot_delay: number;
     jitter?: number;
     minimum?: number; // The start frame for the mosaic, multiplied to the video length.
     maximum?: number; // The end frame for the mosaic, multiplied to the video length.
@@ -110,15 +109,6 @@ const mosaicOptions: MosaicOptions = {
      * @type {string}
      */
     font_family: "",
-    /**
-     * Delay between each screenshot
-     * 
-     * Useful if you use png screenshot mode and you keep getting duplicates.
-     * In miliseconds
-     *
-     * @type {number}
-     */
-    screenshot_delay: 0,
     /**
      * Jitter factor for the screenshots.
      *
@@ -495,8 +485,8 @@ function formatDurationToHHMMSS(seconds?: number): string {
  */
 function createOutputName(fileName: string, options: MinimalMosaicOptions): string {
     let finalName = fileName.replace(" ", "_");
-    const ColRow = `${options.columns}x${options.rows}`;
-    const mosaicName = `.mosaic${ColRow}`;
+    const colRows = `${options.columns}x${options.rows}`;
+    const mosaicName = `.mosaic${colRows}`;
     // Max count is 256 characters, with safety margin to 224
     const testCount = finalName.length + mosaicName.length;
     if (testCount > 224) {
@@ -585,9 +575,13 @@ function runAnnotation(
 
         "-gravity",
         "northwest",
+        "-weight",
+        "bold",
         "label:mpv Media Player",
 
         // Add top margin
+        "-size",
+        "0x0",
         "-splice",
         "0x10",
 
@@ -595,6 +589,8 @@ function runAnnotation(
         "16",
         "-gravity",
         "northwest",
+        "-weight",
+        "normal",
 
         "label:File Name: " + fileName + "",
         "label:File Size: " + humanizeBytes(mp.get_property_number("file-size")) + "",
@@ -602,6 +598,8 @@ function runAnnotation(
         "label:Duration: " + duration + "",
 
         // Add left margin
+        "-gravity",
+        "northwest",
         "-splice",
         "10x0",
 
@@ -734,9 +732,12 @@ function screenshotCycles(
 
             const imagePath = mp.utils.join_path(screenshotDir, `temp_screenshot-${counter}.${ssFormat}`);
 
-            if (options.screenshot_delay > 0) {
-                mp.msg.debug(`Delaying screenshot ${counter} by ${options.screenshot_delay}ms`)
-                setTimeout(() => {
+            function waitForSeekAndScreenshot() {
+                const isSeeking = mp.get_property_bool('seeking', false);
+
+                if (isSeeking) {
+                    setTimeout(waitForSeekAndScreenshot, 50);
+                } else {
                     mp.command_native_async(["screenshot-to-file", imagePath, options.mode], (success, _, error) => {
                         if (!success) {
                             callback(false, error, screenshots);
@@ -750,38 +751,16 @@ function screenshotCycles(
                         }
         
                         // if not, loop again.
-                        setTimeout(() => {
-                            callbackScreenshot(counter + 1, [...screenshots, imagePath])
-                        }, options.screenshot_delay);
+                        callbackScreenshot(counter + 1, [...screenshots, imagePath]);
                     });
-                }, options.screenshot_delay);
-            } else {
-                mp.command_native_async(["screenshot-to-file", imagePath, options.mode], (success, _, error) => {
-                    if (!success) {
-                        callback(false, error, screenshots);
-                        return;
-                    }
-        
-                    // if counter is equal to totalImages, we are done
-                    if (counter >= totalImages) {
-                        callback(true, undefined, [...screenshots, imagePath]);
-                        return;
-                    }
-    
-                    // if not, loop again.
-                    callbackScreenshot(counter + 1, [...screenshots, imagePath]);
-                });
+                }
             }
+
+            waitForSeekAndScreenshot();
         })
     }
 
-    if (options.screenshot_delay > 0) {
-        setTimeout(() => {
-            callbackScreenshot(1, screenshots);
-        }, options.screenshot_delay);
-    } else {
-        callbackScreenshot(1, screenshots);
-    }
+    callbackScreenshot(1, screenshots);
 }
 
 /**
