@@ -9,7 +9,7 @@
  *
  * Created by: noaione
  * License: MIT
- * Version: 2026.05.20.1
+ * Version: 2026.05.22.1
  */
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -237,20 +237,20 @@ var Pathing = /** @class */ (function () {
     Pathing.prototype.createDirectory = function (path) {
         if (this.isUnix()) {
             mp.msg.info("Creating directory (Unix): " + path);
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["mkdir", "-p", path] });
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["mkdir", "-p", "".concat(path, " ")] });
         }
         else {
             mp.msg.info("Creating directory (Windows): " + path);
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "mkdir", path] });
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "mkdir", "".concat(path, " ")] });
         }
     };
     Pathing.prototype.deleteFile = function (path) {
         mp.msg.info("Deleting file: " + path);
         if (this.isUnix()) {
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["rm", path] });
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["rm", "".concat(path, " ")] });
         }
         else {
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "del", "/F", "/Q", path] });
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "del", "/F", "/Q", "".concat(path, " ")] });
         }
     };
     Pathing.prototype.joinPath = function (basePath, path) {
@@ -425,7 +425,7 @@ function formatDurationToHHMMSS(seconds) {
  * @returns {string} - The new filename
  */
 function createOutputName(fileName, options) {
-    var finalName = fileName.replace(" ", "_");
+    var finalName = fileName.replace(/ /g, "_");
     var colRows = "".concat(options.columns, "x").concat(options.rows);
     var mosaicName = ".mosaic".concat(colRows);
     // Max count is 256 characters, with safety margin to 224
@@ -775,7 +775,7 @@ function entrypoint(options) {
     var ssFormat = getScreenshotFormat(options);
     var minFrame = (_a = options.minimum) !== null && _a !== void 0 ? _a : 0.1;
     var maxFrame = (_b = options.maximum) !== null && _b !== void 0 ? _b : 0.9;
-    // we want to start at 10% of the video length and end at 90%
+    // we want to start at at the set minimum and end at the set maximum
     var startTime = videoLength * minFrame;
     var endTime = videoLength * maxFrame;
     var timeStep = (endTime - startTime) / (imageCount - 1);

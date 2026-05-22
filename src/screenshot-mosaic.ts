@@ -8,7 +8,7 @@
  * 
  * Created by: noaione
  * License: MIT
- * Version: 2026.05.20.1
+ * Version: 2026.05.22.1
  */
 
 const scriptName = mp.get_script_name();
@@ -285,19 +285,19 @@ class Pathing {
     createDirectory(path: string) {
         if (this.isUnix()) {
             mp.msg.info("Creating directory (Unix): " + path);
-            mp.command_native({name: "subprocess", playback_only: false, args: ["mkdir", "-p", path]});
+            mp.command_native({name: "subprocess", playback_only: false, args: ["mkdir", "-p", `${path} `]});
         } else {
             mp.msg.info("Creating directory (Windows): " + path);
-            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", "mkdir", path]});
+            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", "mkdir", `${path} `]});
         }
     }
 
     deleteFile(path: string) {
         mp.msg.info("Deleting file: " + path);
         if (this.isUnix()) {
-            mp.command_native({name: "subprocess", playback_only: false, args: ["rm", path]});
+            mp.command_native({name: "subprocess", playback_only: false, args: ["rm", `${path} `]});
         } else {
-            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", "del", "/F", "/Q", path]});
+            mp.command_native({name: "subprocess", playback_only: false, args: ["cmd", "/C", "del", "/F", "/Q", `${path} `]});
         }
     }
 
@@ -484,7 +484,7 @@ function formatDurationToHHMMSS(seconds?: number): string {
  * @returns {string} - The new filename
  */
 function createOutputName(fileName: string, options: MinimalMosaicOptions): string {
-    let finalName = fileName.replace(" ", "_");
+    let finalName = fileName.replace(/ /g, "_");
     const colRows = `${options.columns}x${options.rows}`;
     const mosaicName = `.mosaic${colRows}`;
     // Max count is 256 characters, with safety margin to 224
@@ -904,7 +904,7 @@ function entrypoint(options: MosaicOptions): void {
     const minFrame = options.minimum ?? 0.1;
     const maxFrame = options.maximum ?? 0.9;
 
-    // we want to start at 10% of the video length and end at 90%
+    // we want to start at at the set minimum and end at the set maximum
     const startTime = videoLength * minFrame;
     const endTime = videoLength * maxFrame;
     const timeStep = (endTime - startTime) / (imageCount - 1);

@@ -10,7 +10,7 @@ To download, open the [dist](dist) folder and just put the `.js` file into your 
 
 Create a mosaic of an images like what MPC-HC does.
 
-![Sample](https://p.ihateani.me/oljnisnr.png)
+![Sample](https://p.ihateani.me/rrhrrnay.jpg)
 
 To run, just press `ctrl+alt+s`, it will create a `$fileName.mosaic$colx$row.png` file in either your screenshot folder or the mpv home directory. (`~/.mpv` or `%APPDATA%/mpv`)
 
