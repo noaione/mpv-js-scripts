@@ -9,7 +9,7 @@
  *
  * Created by: noaione
  * License: MIT
- * Version: 2026.05.22.1
+ * Version: 2026.11.25.1
  */
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -234,23 +234,72 @@ var Pathing = /** @class */ (function () {
             previousDir: previousDir,
         };
     };
+    /**
+     * Escape a literal string for safe use inside a PowerShell -Command script.
+     * @param {string} value - The raw string value.
+     * @returns {string} - PowerShell expression evaluating to the exact string.
+     */
+    Pathing.prototype._escapePowerShellLiteral = function (value) {
+        var parts = [];
+        var current = "";
+        for (var i = 0; i < value.length; i++) {
+            var ch = value.charAt(i);
+            var code = value.charCodeAt(i);
+            if (ch === "'") {
+                current += "''";
+            }
+            else if (code === 0x2018 || code === 0x2019 || code === 0x201a || code === 0x201b) {
+                if (current.length > 0) {
+                    parts.push("'".concat(current, "'"));
+                    current = "";
+                }
+                parts.push("[char]0x".concat(code.toString(16)));
+            }
+            else {
+                current += ch;
+            }
+        }
+        if (current.length > 0 || parts.length === 0) {
+            parts.push("'".concat(current, "'"));
+        }
+        return "(".concat(parts.join(" + "), ")");
+    };
     Pathing.prototype.createDirectory = function (path) {
+        if (!path)
+            return;
         if (this.isUnix()) {
             mp.msg.info("Creating directory (Unix): " + path);
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["mkdir", "-p", "".concat(path, " ")] });
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["mkdir", "-p", "--", path] });
         }
         else {
             mp.msg.info("Creating directory (Windows): " + path);
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "mkdir", "".concat(path, " ")] });
+            var psCmd = "[void][System.IO.Directory]::CreateDirectory(".concat(this._escapePowerShellLiteral(path), ")");
+            mp.command_native({ name: "subprocess", playback_only: false, args: ["powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd] });
         }
     };
     Pathing.prototype.deleteFile = function (path) {
-        mp.msg.info("Deleting file: " + path);
-        if (this.isUnix()) {
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["rm", "".concat(path, " ")] });
+        var _this = this;
+        var rawList = Array.isArray(path) ? path : [path];
+        var targets = [];
+        for (var i = 0; i < rawList.length; i++) {
+            if (rawList[i]) {
+                targets.push(rawList[i]);
+            }
         }
-        else {
-            mp.command_native({ name: "subprocess", playback_only: false, args: ["cmd", "/C", "del", "/F", "/Q", "".concat(path, " ")] });
+        if (targets.length === 0)
+            return;
+        mp.msg.info(targets.length === 1 ? "Deleting file: " + targets[0] : "Deleting " + targets.length + " files");
+        var chunkSize = 50;
+        for (var i = 0; i < targets.length; i += chunkSize) {
+            var chunk = targets.slice(i, i + chunkSize);
+            if (this.isUnix()) {
+                mp.command_native({ name: "subprocess", playback_only: false, args: __spreadArray(["rm", "-f", "--"], chunk, true) });
+            }
+            else {
+                var escapedList = chunk.map(function (p) { return _this._escapePowerShellLiteral(p); }).join(",");
+                var psCmd = "Remove-Item -LiteralPath @(".concat(escapedList, ") -Force -ErrorAction SilentlyContinue");
+                mp.command_native({ name: "subprocess", playback_only: false, args: ["powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd] });
+            }
         }
     };
     Pathing.prototype.joinPath = function (basePath, path) {
@@ -813,10 +862,9 @@ function entrypoint(options) {
                 }
                 // Cleanup
                 mp.msg.info("Cleaning up...");
-                screenshots.forEach(function (sspath) {
-                    paths.deleteFile(paths.fixPath(sspath));
-                });
-                paths.deleteFile(paths.fixPath("".concat(imgOutput_1, ".montage.png")));
+                var filesToDelete = screenshots.map(function (sspath) { return paths.fixPath(sspath); });
+                filesToDelete.push(paths.fixPath("".concat(imgOutput_1, ".montage.png")));
+                paths.deleteFile(filesToDelete);
             });
         }
     });
